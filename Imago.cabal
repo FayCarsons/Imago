@@ -1,0 +1,49 @@
+cabal-version:      3.0
+name:               Imago
+version:            0.1.0.0
+synopsis:           Industrial grade image processing
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Fay Carsons
+maintainer:         faycarsons23@gmail.com
+category:           Graphics
+build-type:         Custom
+extra-doc-files:    CHANGELOG.md
+
+custom-setup
+  setup-depends:
+    base >= 4.14 && < 5,
+    Cabal >= 3.0,
+    directory,
+    filepath,
+    process
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:  Graphics.Imago
+    other-modules:    Graphics.LibImago
+    build-depends:    
+        base 
+        , bytestring
+        , binary
+        , memory
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    extra-libraries: imago
+    extra-lib-dirs: /Users/faycarsons/Desktop/Code/Haskell/Imago/Core/target/release
+    include-dirs: /Users/faycarsons/Desktop/Code/Haskell/Imago/Core/include
+    ghc-options: -Wall -O2
+
+test-suite Imago-test
+    import:           warnings
+    default-language: Haskell2010
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base
+        , Imago
+        , bytestring

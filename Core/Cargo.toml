@@ -1,0 +1,21 @@
+[package]
+name = "Core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+name = "imago"
+
+[dependencies]
+bincode = "2.0.1"
+image = { version = "0.25.6", features = ["webp"] }
+libc = "0.2.174"
+
+[build-dependencies]
+cbindgen = "0.29.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
