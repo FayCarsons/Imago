@@ -4,7 +4,6 @@ use image::{DynamicImage, ImageFormat};
 use std::ffi::CStr;
 use std::io::Cursor;
 use std::os::raw::c_char;
-use std::path::PathBuf;
 use std::slice;
 
 #[repr(C)]
@@ -12,32 +11,20 @@ use std::slice;
 pub enum ImagoStatus {
     OK = 0,
     InvalidPath = 1,
-    InvalidOperation = 2,
-    InvalidOutputFormat = 3,
-    LoadFailed = 4,
-    EncodeFailed = 5,
-    NullContext = 6,
-}
-
-impl ImagoStatus {
-    fn message(self) -> &'static str {
-        match self {
-            ImagoStatus::OK => "Success",
-            ImagoStatus::InvalidPath => "Invalid image path",
-            ImagoStatus::InvalidOperation => "Invalid operations data",
-            ImagoStatus::InvalidOutputFormat => "Invalid output format",
-            ImagoStatus::LoadFailed => "Loading image failed",
-            ImagoStatus::EncodeFailed => "Failed to encode image",
-            ImagoStatus::NullContext => "Null or otherwise invalid context",
-        }
-    }
+    InvalidInputBuffer = 2,
+    InvalidOperation = 3,
+    InvalidInputFormat = 4,
+    InvalidOutputFormat = 5,
+    LoadFailed = 6,
+    EncodeFailed = 7,
+    NullContext = 8,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ByteArray {
-    pub data: *const u8,
     pub len: usize,
+    pub data: *const u8,
 }
 
 impl From<Vec<u8>> for ByteArray {
@@ -47,73 +34,122 @@ impl From<Vec<u8>> for ByteArray {
     }
 }
 
-impl From<String> for ByteArray {
-    fn from(value: String) -> Self {
-        let (data, len, _) = String::into_raw_parts(value);
-        ByteArray { data, len }
+trait Arguments {}
+
+struct FileArgs<'a>(&'a str);
+
+impl<'a> Arguments for FileArgs<'a> {}
+
+impl<'a> FileArgs<'a> {
+    fn decode(input_path: *const c_char) -> Option<Self> {
+        (!input_path.is_null())
+            .then(|| unsafe { CStr::from_ptr(input_path) })
+            .and_then(|s| s.to_str().ok())
+            .map(|input_path| Self(input_path))
     }
 }
 
-impl From<&'static str> for ByteArray {
-    fn from(value: &'static str) -> Self {
-        let bytes = value.as_bytes();
-        let data = bytes.as_ptr();
-        let len = bytes.len();
+struct BufferArgs<'a> {
+    input_buffer: &'a [u8],
+    input_format: Option<Format>,
+}
 
-        Self { data, len }
+impl<'a> Arguments for BufferArgs<'a> {}
+
+impl<'a> BufferArgs<'a> {
+    fn decode(
+        buffer_data: *const u8,
+        buffer_len: usize,
+        input_format: Option<*const Format>,
+    ) -> Result<Self, ImagoStatus> {
+        let input_buffer = (!buffer_data.is_null())
+            .then(|| unsafe { slice::from_raw_parts(buffer_data, buffer_len) })
+            .ok_or(ImagoStatus::InvalidInputBuffer)?;
+
+        let input_format = match input_format {
+            Some(fmt) => {
+                if fmt.is_null() {
+                    Err(ImagoStatus::InvalidInputFormat)
+                } else {
+                    unsafe { Ok(Some(fmt.read())) }
+                }
+            }
+            None => Ok(None),
+        }?;
+
+        Ok(Self {
+            input_buffer,
+            input_format,
+        })
     }
+}
+
+fn decode_pipeline<'a>(
+    operations_data: *const Operation,
+    operations_len: usize,
+) -> Option<&'a [Operation]> {
+    (!operations_data.is_null())
+        .then(|| unsafe { slice::from_raw_parts(operations_data, operations_len) })
+}
+
+fn decode_output_format(fmt: *const Format) -> Option<Format> {
+    (!fmt.is_null()).then(|| unsafe { fmt.read() })
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
-struct Request {
-    pipeline: Vec<Operation>,
-    input_path: PathBuf,
-    output_format: OutputFormat,
+struct Request<'a, A: Arguments> {
+    args: A,
+    pipeline: &'a [Operation],
+    output_format: Format,
 }
 
-impl Request {
-    fn build(
+impl<'a> Request<'a, FileArgs<'a>> {
+    fn build_file(
         input_path: *const c_char,
         operations_data: *const Operation,
         operations_len: usize,
-        output_format: *const OutputFormat,
+        output_format: *const Format,
     ) -> Result<Self, ImagoStatus> {
-        unsafe {
-            if input_path.is_null() {
-                return Err(ImagoStatus::InvalidPath);
-            }
+        let args = FileArgs::decode(input_path).ok_or(ImagoStatus::InvalidPath)?;
+        let pipeline = decode_pipeline(operations_data, operations_len)
+            .ok_or(ImagoStatus::InvalidOperation)?;
+        let output_format =
+            decode_output_format(output_format).ok_or(ImagoStatus::InvalidOutputFormat)?;
 
-            if operations_data.is_null() {
-                return Err(ImagoStatus::InvalidOperation);
-            }
+        Ok(Self {
+            args,
+            pipeline,
+            output_format,
+        })
+    }
+}
 
-            if output_format.is_null() {
-                return Err(ImagoStatus::InvalidOutputFormat);
-            }
+impl<'a> Request<'a, BufferArgs<'a>> {
+    fn build_buffer(
+        buffer_data: *const u8,
+        buffer_len: usize,
+        input_format: Option<*const Format>,
+        operations_data: *const Operation,
+        operations_len: usize,
+        output_format: *const Format,
+    ) -> Result<Self, ImagoStatus> {
+        let args = BufferArgs::decode(buffer_data, buffer_len, input_format)?;
+        let pipeline = decode_pipeline(operations_data, operations_len)
+            .ok_or(ImagoStatus::InvalidOperation)?;
+        let output_format =
+            decode_output_format(output_format).ok_or(ImagoStatus::InvalidOutputFormat)?;
 
-            let input_path = PathBuf::from(
-                CStr::from_ptr(input_path)
-                    .to_str()
-                    .map_err(|_| ImagoStatus::InvalidPath)?,
-            );
-
-            let pipeline = slice::from_raw_parts(operations_data, operations_len).to_owned();
-
-            let output_format = output_format.read();
-
-            Ok(Request {
-                pipeline,
-                input_path,
-                output_format,
-            })
-        }
+        Ok(Self {
+            args,
+            pipeline,
+            output_format,
+        })
     }
 }
 
 #[repr(C, u8)]
 #[derive(Debug, Clone)]
-pub enum OutputFormat {
+pub enum Format {
     WebP = 0,
     Png = 1,
     Jpeg(u8) = 2,
@@ -199,17 +235,17 @@ fn apply_operation(img: DynamicImage, operation: &Operation) -> DynamicImage {
     }
 }
 
-fn encode_image(img: &DynamicImage, format: &OutputFormat) -> Result<Vec<u8>, ImagoStatus> {
+fn encode_image(img: &DynamicImage, format: &Format) -> Result<Vec<u8>, ImagoStatus> {
     let mut output = Vec::new();
     let mut cursor = Cursor::new(&mut output);
 
     match format {
-        OutputFormat::WebP => img.write_to(&mut cursor, ImageFormat::WebP),
-        OutputFormat::Jpeg(quality) => {
+        Format::WebP => img.write_to(&mut cursor, ImageFormat::WebP),
+        Format::Jpeg(quality) => {
             let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(cursor, *quality);
             encoder.encode_image(img)
         }
-        OutputFormat::Png => img.write_to(&mut cursor, ImageFormat::Png),
+        Format::Png => img.write_to(&mut cursor, ImageFormat::Png),
     }
     .map_err(|_| ImagoStatus::EncodeFailed)?;
 
@@ -224,38 +260,21 @@ pub struct Response {
     status: ImagoStatus,
 }
 
-impl Response {
+pub struct Context(ImagoStatus);
+
+impl Context {
+    fn success() -> Self {
+        Self(ImagoStatus::OK)
+    }
+
     fn failure(status: ImagoStatus) -> Self {
-        Response {
-            bytes: std::ptr::null_mut(),
-            len: 0,
-            status,
-        }
+        Self(status)
     }
-
-    fn success(bytes: Vec<u8>) -> Self {
-        let (bytes, len, _) = bytes.into_raw_parts();
-
-        Self {
-            bytes,
-            len,
-            status: ImagoStatus::OK,
-        }
-    }
-}
-
-pub struct Context {
-    status: ImagoStatus,
-    output_len: usize,
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn make_context() -> *mut Context {
-    let context = Context {
-        status: ImagoStatus::OK,
-        output_len: 0,
-    }
-    .into();
+    let context = Context(ImagoStatus::OK).into();
 
     Box::into_raw(context)
 }
@@ -271,63 +290,47 @@ pub unsafe extern "C" fn destroy_context(ctx: *mut Context) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn get_status(ctx: *mut Context) -> ImagoStatus {
-    unsafe { ctx.read().status }
+    unsafe { ctx.read().0 }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn get_output_len(ctx: *mut Context) -> usize {
-    unsafe { ctx.read().output_len }
-}
-
-// In a perfect world this would be a function of Path -> [Operation] -> OutputFormat -> IO ()
-// But instead we have to unmarshal all our values from haskell
-// Ideally, we are relying on the C ABI *as much as possible*
-// Manual encoding/decoding or relying on language/library quirks is not acceptable
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_image(
     ctx: *mut Context,
     input_path: *const c_char,
     operations_data: *const Operation,
     operations_len: usize,
-    output_format: *const OutputFormat,
-) -> *mut u8 {
-    let request = match Request::build(input_path, operations_data, operations_len, output_format) {
-        Ok(req) => req,
-        Err(status) => unsafe {
-            *ctx = Context {
-                status,
-                output_len: 0,
-            };
-            return std::ptr::null_mut();
-        },
-    };
+    output_format: *const Format,
+) -> *mut ByteArray {
+    let request =
+        match Request::build_file(input_path, operations_data, operations_len, output_format) {
+            Ok(req) => req,
+            Err(status) => unsafe {
+                *ctx = Context::failure(status);
+                return std::ptr::null_mut();
+            },
+        };
 
-    let img = match image::open(request.input_path) {
+    let img = match image::open(request.args.0) {
         Ok(img) => img,
         Err(_) => unsafe {
-            *ctx = Context {
-                status: ImagoStatus::LoadFailed,
-                output_len: 0,
-            };
+            *ctx = Context::failure(ImagoStatus::LoadFailed);
             return std::ptr::null_mut();
         },
     };
 
     let transformed = request.pipeline.iter().fold(img, apply_operation);
 
-    let (buf, buflen, _) = match encode_image(&transformed, &request.output_format) {
-        Ok(raw) => raw.into_raw_parts(),
+    let buf = match encode_image(&transformed, &request.output_format) {
+        Ok(raw) => raw,
         Err(status) => unsafe {
-            *ctx = Context {
-                status,
-                output_len: 0,
-            };
+            *ctx = Context::failure(status);
             return std::ptr::null_mut();
         },
     };
 
-    unsafe { (*ctx).output_len = buflen }
-    buf
+    let bytes = ByteArray::from(buf).into();
+
+    Box::into_raw(bytes)
 }
 
 #[unsafe(no_mangle)]
@@ -335,77 +338,62 @@ pub unsafe extern "C" fn process_buffer(
     ctx: *mut Context,
     content: *mut u8,
     content_len: usize,
+    input_format: *const Format,
     operations_data: *const Operation,
     operations_len: usize,
-    output_format: *const OutputFormat,
-) -> *mut u8 {
+    output_format: *const Format,
+) -> *mut ByteArray {
     if ctx.is_null() {
         unsafe {
-            *ctx = Context {
-                status: ImagoStatus::NullContext,
-                output_len: 0,
-            };
-
+            *ctx = Context::failure(ImagoStatus::NullContext);
             return std::ptr::null_mut();
         }
     }
 
-    if content.is_null() {
-        unsafe {
-            (*ctx).status = ImagoStatus::LoadFailed;
-            return std::ptr::null_mut();
-        }
-    }
+    let input_format = (!input_format.is_null()).then(|| input_format);
 
-    if operations_data.is_null() {
-        unsafe {
-            (*ctx).status = ImagoStatus::InvalidOperation;
+    let request = match Request::build_buffer(
+        content,
+        content_len,
+        input_format,
+        operations_data,
+        operations_len,
+        output_format,
+    ) {
+        Ok(request) => request,
+        Err(status) => unsafe {
+            *ctx = Context::failure(status);
             return std::ptr::null_mut();
-        }
-    }
+        },
+    };
 
-    if output_format.is_null() {
-        unsafe {
-            (*ctx).status = ImagoStatus::InvalidOutputFormat;
-            return std::ptr::null_mut();
-        }
-    }
-
-    let content = unsafe { slice::from_raw_parts(content, content_len) };
-    let img = match image::load_from_memory(content) {
+    let img = match image::load_from_memory(request.args.input_buffer) {
         Ok(img) => img,
         Err(_) => unsafe {
-            (*ctx).status = ImagoStatus::LoadFailed;
+            (*ctx) = Context::failure(ImagoStatus::LoadFailed);
             return std::ptr::null_mut();
         },
     };
 
-    let pipeline = unsafe { slice::from_raw_parts(operations_data, operations_len) };
+    let transformed = request.pipeline.iter().fold(img, apply_operation);
 
-    let transformed = pipeline.iter().fold(img, apply_operation);
-
-    let output_format = unsafe { output_format.read() };
-
-    let (buf, buflen, _) = match encode_image(&transformed, &output_format) {
-        Ok(raw) => raw.into_raw_parts(),
+    let buf = match encode_image(&transformed, &request.output_format) {
+        Ok(raw) => ByteArray::from(raw).into(),
         Err(status) => unsafe {
-            *ctx = Context {
-                status,
-                output_len: 0,
-            };
+            *ctx = Context::failure(status);
             return std::ptr::null_mut();
         },
     };
 
-    unsafe { (*ctx).output_len = buflen }
-    buf
+    unsafe { *ctx = Context::success() }
+    Box::into_raw(buf)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn destroy_output_buffer(contents: *mut u8, len: usize) {
-    unsafe {
-        if !contents.is_null() {
-            let _ = slice::from_raw_parts(contents, len);
+pub unsafe extern "C" fn destroy_output_buffer(bytes: *mut ByteArray) {
+    if !bytes.is_null() {
+        unsafe {
+            let _ = Box::from_raw(bytes);
         }
     }
 }

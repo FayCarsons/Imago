@@ -1,17 +1,14 @@
-{-# LANGUAGE LambdaCase #-}
 module Main (main) where
 
 import qualified Data.ByteString as BS
-import           Graphics.Imago  (Direction (..), Operation (..),
-                                  OutputFormat (..))
+import           Graphics.Imago  (Filter (..), Format (..), TransformM)
 import qualified Graphics.Imago  as Imago
-import           System.Exit     (exitFailure)
+
+program :: TransformM ()
+program = do
+    Imago.resize 400 400 Nearest False
 
 main :: IO ()
 main =
-    Imago.processImage "glace.png" [Grayscale] Png >>= \case
-        Right buffer -> BS.writeFile "OUTPUT.png" buffer
-        Left err     -> do
-            print err
-            exitFailure
-
+    Imago.runFileTransform "Glace.png" Png program
+        >>= either ( error . show ) (BS.writeFile "OUTPUT.png")

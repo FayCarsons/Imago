@@ -1,72 +1,74 @@
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveFunctor    #-}
+{-# LANGUAGE DeriveGeneric    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE OverloadedLists  #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TemplateHaskell  #-}
+
 module Graphics.Imago
-    ( Operation(..)
-    , OutputFormat(..)
-    , FilterType(..)
-    , Direction(..)
+    ( TransformM
     , Degree(..)
-    , ImagoStatus(..)
-    , processImage
-    , processBuffer
-    , printOperations
+    , Direction(..)
+    , Filter(..)
+    , Format(..)
+    , resize
+    , rotate
+    , flip
+    , grayscale
+    , blur
+    , brighten
+    , contrast
+    , runFileTransform
+    , runBufferTransform
     ) where
 
-import           Data.ByteString   (ByteString)
-import           Data.Word         (Word8)
-import           Foreign           (fromBool)
-import           Graphics.LibImago (Degree (..), Direction (..),
-                                    FilterType (..), ImagoStatus (..))
-import qualified Graphics.LibImago as LibImago
+import           Control.Monad.Free    (Free (..), MonadFree, liftF)
+import           Control.Monad.Free.TH
+import           Data.Binary           (Word32)
+import           Data.ByteString       (ByteString)
+import           Foreign               (fromBool)
+import           Graphics.LibImago
+import           Prelude               hiding (flip)
 
-data Operation
+data Transform a
     = Resize
-    { w          :: Int
-    , h          :: Int
-    , filterType :: FilterType
-    , exact      :: Bool
-    }
-    | Rotate Degree
-    | Flip Direction
-    | Grayscale
-    | Blur Float
-    | Brighten Int
-    | Contrast Float
+        { w          :: Word32
+        , h          :: Word32
+        , filterType :: Filter
+        , exact      :: Bool
+        , next       :: a
+        }
+    | Rotate Degree a
+    | Flip Direction a
+    | Grayscale a
+    | Blur Float a
+    | Brighten Int a
+    | Contrast Float a
+    deriving (Show, Eq, Ord, Functor)
 
-toRaw :: Operation -> LibImago.RawOperation
-toRaw = \case
-    Resize{..} -> LibImago.Resize (fromIntegral w) (fromIntegral h) filterType (fromBool exact)
-    Rotate deg -> LibImago.Rotate deg
-    Flip dir -> LibImago.Flip dir
-    Grayscale -> LibImago.Grayscale
-    Blur rad -> LibImago.Blur $ realToFrac rad
-    Brighten fac -> LibImago.Brighten $ fromIntegral fac
-    Contrast fac -> LibImago.Contrast $ realToFrac fac
+makeFree ''Transform
 
-data OutputFormat
-    = WebP
-    | Png
-    | Jpeg Word8
+type TransformM = Free Transform
 
-outputFormatDiscriminator :: Integral a => OutputFormat -> a
-outputFormatDiscriminator = \case
-    WebP -> 0
-    Png -> 1
-    Jpeg _ -> 2
-
-toRawFormat :: OutputFormat -> LibImago.RawOutputFormat
-toRawFormat = \case
-    WebP -> LibImago.RawOutputFormat (outputFormatDiscriminator WebP) 0
-    Png -> LibImago.RawOutputFormat (outputFormatDiscriminator Png) 1
-    Jpeg q -> LibImago.RawOutputFormat (outputFormatDiscriminator $ Jpeg q) $ fromIntegral q
+unfold :: TransformM a -> [COperation]
+unfold (Pure _) = []
+unfold (Free op) =
+    case op of
+        Resize w h filterType exact next -> CResize (fromIntegral w) (fromIntegral h) filterType (fromBool exact) : unfold next
+        Rotate deg next -> CRotate deg : unfold next
+        Flip dir next -> CFlip dir : unfold next
+        Grayscale next -> CGrayScale : unfold next
+        Blur rad next -> CBlur (realToFrac rad) : unfold next
+        Brighten fac next -> CBrighten (fromIntegral fac) : unfold next
+        Contrast fac next -> CContrast (realToFrac fac) : unfold next
 
 
-processImage :: FilePath -> [Operation] -> OutputFormat -> IO (Either ImagoStatus ByteString)
-processImage path ops fmt =
-    LibImago.rawProcessImage path (map toRaw ops) (toRawFormat fmt)
+runFileTransform :: FilePath -> Format -> TransformM () -> IO (Either ImagoStatus ByteString)
+runFileTransform path fmt transform =
+    rawProcessImage path (unfold transform) fmt
 
-processBuffer :: ByteString -> [Operation] -> OutputFormat -> IO (Either ImagoStatus ByteString)
-processBuffer contents ops fmt = LibImago.rawProcessBuffer contents (map toRaw ops) (toRawFormat fmt)
-
-printOperations :: [Operation] -> IO ()
-printOperations = LibImago.printOperations . map toRaw
+runBufferTransform :: ByteString -> Format -> TransformM () -> IO (Either ImagoStatus ByteString)
+runBufferTransform contents fmt transform =
+    rawProcessBuffer contents (unfold transform) fmt
