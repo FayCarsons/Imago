@@ -1,4 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module Graphics.LibImago
     ( ImagoStatus(..)
     , Direction(..)
@@ -16,6 +17,7 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Unsafe as BSU
 import           Data.Functor           ((<&>))
+import           Data.Maybe             (fromMaybe)
 import           Foreign
 import           Foreign.C
 import           Graphics.Interface.Raw
@@ -37,7 +39,7 @@ foreign import ccall "process_image"
     c_process_image_raw :: Ptr Context -> CString -> Ptr COperation -> CSize -> Ptr Format -> IO (Ptr RawSlice)
 
 foreign import ccall "process_buffer"
-    c_process_buffer_raw :: Ptr Context -> Ptr CChar -> CSize -> Ptr COperation -> CSize -> Ptr Format -> IO (Ptr RawSlice)
+    c_process_buffer_raw :: Ptr Context -> Ptr CChar -> CSize -> Ptr Format -> Ptr COperation -> CSize -> Ptr Format -> IO (Ptr RawSlice)
 
 foreign import ccall "make_context"
     c_make_context :: IO (Ptr Context)
@@ -72,8 +74,8 @@ rawProcessImage inputPath operations outputFormat = do
         (Ok, True)  -> return $ Left NullContext
         (err, _)    -> return $ Left err
 
-rawProcessBuffer :: ByteString -> [COperation] -> Format -> IO (Either ImagoStatus ByteString)
-rawProcessBuffer contents operations outputFormat = do
+rawProcessBuffer :: ByteString -> Maybe Format -> [COperation] -> Format -> IO (Either ImagoStatus ByteString)
+rawProcessBuffer contents mFormat operations outputFormat = do
     -- Create context with ForeignPtr
     context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
 
@@ -82,13 +84,26 @@ rawProcessBuffer contents operations outputFormat = do
             withArray operations $ \operationsPtr ->
                 with outputFormat $ \outputFormatPtr ->
                     withForeignPtr context $ \ctx ->
-                        c_process_buffer_raw
-                            ctx
-                            contentPtr
-                            (fromIntegral contentLen)
-                            operationsPtr
-                            (fromIntegral $ length operations)
-                            outputFormatPtr
+                        case mFormat of
+                            Just format ->
+                                with format $ \inputFormat ->
+                                    c_process_buffer_raw
+                                        ctx
+                                        contentPtr
+                                        (fromIntegral contentLen)
+                                        inputFormat
+                                        operationsPtr
+                                        (fromIntegral $ length operations)
+                                        outputFormatPtr
+                            Nothing ->
+                                    c_process_buffer_raw
+                                        ctx
+                                        contentPtr
+                                        (fromIntegral contentLen)
+                                        nullPtr
+                                        operationsPtr
+                                        (fromIntegral $ length operations)
+                                        outputFormatPtr
 
     status <- fromC <$> withForeignPtr context c_get_status
     case (status, result == nullPtr) of

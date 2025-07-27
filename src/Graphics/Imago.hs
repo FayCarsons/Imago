@@ -69,6 +69,6 @@ runFileTransform :: FilePath -> Format -> TransformM () -> IO (Either ImagoStatu
 runFileTransform path fmt transform =
     rawProcessImage path (unfold transform) fmt
 
-runBufferTransform :: ByteString -> Format -> TransformM () -> IO (Either ImagoStatus ByteString)
-runBufferTransform contents fmt transform =
-    rawProcessBuffer contents (unfold transform) fmt
+runBufferTransform :: ByteString -> Maybe Format -> Format -> TransformM () -> IO (Either ImagoStatus ByteString)
+runBufferTransform contents inputFormat outputFormat transform =
+    rawProcessBuffer contents inputFormat (unfold transform) outputFormat

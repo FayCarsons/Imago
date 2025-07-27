@@ -1,5 +1,5 @@
 cabal-version:      3.0
-name:               Imago
+name:               imago
 version:            0.1.0.0
 synopsis:           Industrial grade image processing
 license:            BSD-3-Clause
@@ -49,5 +49,6 @@ test-suite Imago-test
     main-is:          Main.hs
     build-depends:
         base
-        , Imago
+        , imago
         , bytestring
+        , hspec
