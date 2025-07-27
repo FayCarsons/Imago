@@ -2,11 +2,9 @@
 
 ## Why
 
-Imago is an image processing library focused on the needs of Backend services.
+Imago is a light wrapper around Rust's `image` crate, providing a simple monadic interface to its well-optimized, well-maintained image processing algorithms. 
 
-Working on my app [Texel](https://faycarsons.xyz) I found myself needing image processing but was unhappy with the libraries in the Haskell ecosystem, which are unmaintained or didn't meet my performance requirements. I wanted something that was simple and lightning fast without having to shell out money to cloud providers like AWS or Akamai. 
-
-Image processing is entirely handled in Rust, giving us excellent performance *and* a nice monadic interface.
+Building [Texel](https://faycarsons.xyz) I found myself needing an image processing library capable of basic optimization, not wanting to shell out money to cloud services like Akamai or add a Rust microservice and all the complexity and overhead that comes with that, I decided to build my own. 
 
 ## How do I use it
 
