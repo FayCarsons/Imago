@@ -38,6 +38,7 @@ data ImagoStatus
     | InvalidOperation
     | InvalidInputFormat 
     | InvalidOutputFormat
+    | UnsupportedImageFormat
     | LoadFailed
     | EncodeFailed
     | NullContext
@@ -54,6 +55,7 @@ instance CEnum ImagoStatus where
         #{const LoadFailed} -> LoadFailed
         #{const EncodeFailed} -> EncodeFailed
         #{const NullContext} -> NullContext
+        #{const UnsupportedImageFormat} -> UnsupportedImageFormat
         tag -> error $ "Unknown Imago Status tag: " ++ show tag
     toC = \case 
         Ok -> #{const OK}
@@ -62,6 +64,7 @@ instance CEnum ImagoStatus where
         InvalidOperation -> #{const InvalidOperation}
         InvalidInputFormat -> #{const InvalidInputFormat}
         InvalidOutputFormat -> #{const InvalidOutputFormat}
+        UnsupportedImageFormat -> #{const UnsupportedImageFormat}
         LoadFailed -> #{const LoadFailed}
         EncodeFailed -> #{const EncodeFailed}
         NullContext -> #{const NullContext}
@@ -203,30 +206,153 @@ instance Storable COperation where
                 #{poke struct Operation, contrast} ptr contrast
 
 data Format 
-    = WebP 
-    | Png 
-    | Jpeg Word8
+    = Avif
+    | Bmp
+    | Dds
+    | Farbfeld
+    | Gif
+    | Hdr
+    | Ico
+    | Jpeg
+    | OpenExr
+    | Pcx
+    | Png
+    | Pnm
+    | Qoi
+    | Tga
+    | Tiff
+    | WebP
     deriving (Show, Eq, Ord)
 
-formatTag :: Format -> CUChar 
-formatTag = \case 
-    WebP -> #{const WebP}
-    Png -> #{const Png}
-    Jpeg _ -> #{const Jpeg}
+instance CEnum Format where 
+    fromC = \case 
+        #{const Avif} -> Avif
+        #{const Bmp} -> Bmp
+        #{const Dds} -> Dds
+        #{const Farbfeld} -> Farbfeld
+        #{const Gif} -> Gif
+        #{const Hdr} -> Hdr
+        #{const Ico} -> Ico
+        #{const Jpeg} -> Jpeg
+        #{const OpenExr} -> OpenExr
+        #{const Pcx} -> Pcx
+        #{const Png} -> Png
+        #{const Pnm} -> Pnm
+        #{const Qoi} -> Qoi
+        #{const Tga} -> Tga
+        #{const Tiff} -> Tiff
+        #{const WebP} -> WebP
+        tag -> error $ "Unknown 'Format' tag: " ++ show tag
+    toC = \case 
+        Avif -> #{const Avif}
+        Bmp -> #{const Bmp}
+        Dds -> #{const Dds}
+        Farbfeld -> #{const Farbfeld}
+        Gif -> #{const Gif}
+        Hdr -> #{const Hdr}
+        Ico -> #{const Ico}
+        Jpeg -> #{const Jpeg}
+        OpenExr -> #{const OpenExr}
+        Pcx -> #{const Pcx}
+        Png -> #{const Png}
+        Pnm -> #{const Pnm}
+        Qoi -> #{const Qoi}
+        Tga -> #{const Tga}
+        Tiff -> #{const Tiff}
+        WebP -> #{const WebP}
 
 instance Storable Format where 
-    sizeOf _ = #{size struct Format}
-    alignment _ = #{alignment struct Format}
+    sizeOf _ = sizeOf (0 :: CUChar)
+    alignment _ = alignment (0 :: CUChar)
+    peek ptr = fromC <$> peek (castPtr ptr)
+    poke ptr val = poke (castPtr ptr) (toC val)
+
+data ColorType
+    = L8
+    | L16
+    | La8
+    | La16
+    | Rgb8
+    | Rgb16
+    | Rgb32F
+    | Rgba8
+    | Rgba16
+    | Rgba32F
+    deriving (Show, Eq, Ord)
+
+instance CEnum ColorType where 
+    fromC = \case 
+        #{const L8} -> L8
+        #{const L16} -> L16
+        #{const La8} -> La8
+        #{const La16} -> La16
+        #{const Rgb8} -> Rgb8
+        #{const Rgb16} -> Rgb16
+        #{const Rgb32F} -> Rgb32F
+        #{const Rgba8} -> Rgba8
+        #{const Rgba16} -> Rgba16
+        #{const Rgba32F} -> Rgba32F
+        tag -> error $ "Unknown 'ColorType' tag: " ++ show tag
+    toC = \case 
+        L8 -> #{const L8}
+        L16 -> #{const L16}
+        La8 -> #{const La8}
+        La16 -> #{const La16}
+        Rgb8 -> #{const Rgb8}
+        Rgb16 -> #{const Rgb16}
+        Rgb32F -> #{const Rgb32F}
+        Rgba8 -> #{const Rgba8}
+        Rgba16 -> #{const Rgba16}
+        Rgba32F -> #{const Rgba32F}
+
+instance Storable ColorType where 
+    sizeOf _ = sizeOf (0 :: CUChar)
+    alignment _ = alignment (0 :: CUChar)
+    peek ptr = fromC <$> peek (castPtr ptr)
+    poke ptr val = poke (castPtr ptr) (toC val)
+
+data OptionalFormat 
+    = OptionalFormat 
+    { has_value :: CBool 
+    , value :: Format 
+    } deriving Show
+
+instance Storable OptionalFormat where 
+    sizeOf _ = #{size struct OptionalFormat}
+    alignment _ = #{alignment struct OptionalFormat}
+    peek ptr = OptionalFormat <$> #{peek struct OptionalFormat, has_value} ptr <*> #{peek struct OptionalFormat, value} ptr
+    poke ptr (OptionalFormat has_value value) = 
+        #{poke struct OptionalFormat, has_value} ptr has_value
+            >> #{poke struct OptionalFormat, value} ptr value
+
+data ImageInfo 
+    = ImageInfo
+    { width :: Word32 
+    , height :: Word32 
+    , format :: OptionalFormat 
+    , color :: ColorType 
+    , fileSize :: CSize 
+    , hasAlpha :: CBool 
+    , aspectRatio :: CDouble 
+    } deriving Show
+
+instance Storable ImageInfo where 
+    sizeOf _ = #{size struct ImageInfo}
+    alignment _ = #{alignment struct ImageInfo}
     peek ptr = do 
-        tag <- #{peek struct Format, tag} ptr :: IO CUChar
-        case tag of 
-            #{const WebP} -> return WebP
-            #{const Png} -> return Png
-            #{const Jpeg} -> do 
-                Jpeg <$> (#{peek struct Format, jpeg} ptr :: IO Word8)
-            _ -> error $ "Unknown 'Format' tag: " ++ show tag
-    poke ptr fmt = do 
-        #{poke struct Format, tag} ptr (formatTag fmt)
-        case fmt of 
-            Jpeg quality -> #{poke struct Format, jpeg} ptr quality 
-            _ -> return ()
+        width <- #{peek struct ImageInfo, width} ptr :: IO Word32
+        height <- #{peek struct ImageInfo, height} ptr :: IO Word32
+        format <- #{peek struct ImageInfo, format} ptr :: IO OptionalFormat
+        color <- #{peek struct ImageInfo, color} ptr :: IO ColorType
+        fileSize <- #{peek struct ImageInfo, file_size} ptr :: IO CSize
+        hasAlpha <- #{peek struct ImageInfo, has_alpha} ptr :: IO CBool
+        aspectRatio <- #{peek struct ImageInfo, aspect_ratio} ptr :: IO CDouble
+        return $ ImageInfo width height format color fileSize hasAlpha aspectRatio
+    poke ptr (ImageInfo width height format color fileSize hasAlpha aspectRatio) = do 
+        #{poke struct ImageInfo, width} ptr width
+        #{poke struct ImageInfo, height} ptr height
+        #{poke struct ImageInfo, format} ptr format
+        #{poke struct ImageInfo, color} ptr color
+        #{poke struct ImageInfo, file_size} ptr fileSize
+        #{poke struct ImageInfo, has_alpha} ptr hasAlpha
+        #{poke struct ImageInfo, aspect_ratio} ptr aspectRatio

@@ -1,6 +1,6 @@
 #![feature(vec_into_raw_parts)]
 use image::imageops::FilterType as ImageFilter;
-use image::{DynamicImage, ImageFormat};
+use image::{DynamicImage, ImageFormat, ImageReader};
 use std::ffi::CStr;
 use std::io::Cursor;
 use std::os::raw::c_char;
@@ -9,15 +9,16 @@ use std::slice;
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum ImagoStatus {
-    OK = 0,
-    InvalidPath = 1,
-    InvalidInputBuffer = 2,
-    InvalidOperation = 3,
-    InvalidInputFormat = 4,
-    InvalidOutputFormat = 5,
-    LoadFailed = 6,
-    EncodeFailed = 7,
-    NullContext = 8,
+    OK,
+    InvalidPath,
+    InvalidInputBuffer,
+    InvalidOperation,
+    InvalidInputFormat,
+    InvalidOutputFormat,
+    UnsupportedImageFormat,
+    LoadFailed,
+    EncodeFailed,
+    NullContext,
 }
 
 #[repr(C)]
@@ -147,22 +148,35 @@ impl<'a> Request<'a, BufferArgs<'a>> {
     }
 }
 
-#[repr(C, u8)]
-#[derive(Debug, Clone)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub enum Format {
-    WebP = 0,
-    Png = 1,
-    Jpeg(u8) = 2,
+    Avif,
+    Bmp,
+    Dds,
+    Farbfeld,
+    Gif,
+    Hdr,
+    Ico,
+    Jpeg,
+    OpenExr,
+    Pcx,
+    Png,
+    Pnm,
+    Qoi,
+    Tga,
+    Tiff,
+    WebP,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum FilterType {
-    Nearest = 0,
-    Triangle = 1,
-    CatmullRom = 2,
-    Gaussian = 3,
-    Lanczos3 = 4,
+    Nearest,
+    Triangle,
+    CatmullRom,
+    Gaussian,
+    Lanczos3,
 }
 
 impl Into<ImageFilter> for FilterType {
@@ -180,16 +194,16 @@ impl Into<ImageFilter> for FilterType {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub enum Direction {
-    Horizontal = 0,
-    Vertical = 1,
+    Horizontal,
+    Vertical,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub enum Degree {
-    Deg90 = 0,
-    Deg180 = 1,
-    Deg270 = 2,
+    Deg90,
+    Deg180,
+    Deg270,
 }
 
 #[repr(C, u8)]
@@ -235,29 +249,242 @@ fn apply_operation(img: DynamicImage, operation: &Operation) -> DynamicImage {
     }
 }
 
+fn decode_image(bytes: &[u8], format: Option<Format>) -> Result<DynamicImage, ImagoStatus> {
+    if let Some(fmt) = format {
+        let fmt: ImageFormat = fmt.into();
+
+        image::load_from_memory_with_format(bytes, fmt).or(Err(ImagoStatus::LoadFailed))
+    } else {
+        image::load_from_memory(bytes).or(Err(ImagoStatus::LoadFailed))
+    }
+}
+
 fn encode_image(img: &DynamicImage, format: &Format) -> Result<Vec<u8>, ImagoStatus> {
     let mut output = Vec::new();
     let mut cursor = Cursor::new(&mut output);
 
-    match format {
-        Format::WebP => img.write_to(&mut cursor, ImageFormat::WebP),
-        Format::Jpeg(quality) => {
-            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(cursor, *quality);
-            encoder.encode_image(img)
-        }
-        Format::Png => img.write_to(&mut cursor, ImageFormat::Png),
-    }
-    .map_err(|_| ImagoStatus::EncodeFailed)?;
+    let image_format: ImageFormat = (*format).into();
+    img.write_to(&mut cursor, image_format)
+        .map_err(|_| ImagoStatus::EncodeFailed)?;
 
     Ok(output)
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
-pub struct Response {
-    bytes: *mut u8,
-    len: usize,
-    status: ImagoStatus,
+#[derive(Debug, Clone, Copy)]
+pub enum ColorType {
+    L8,
+    L16,
+    La8,
+    La16,
+    Rgb8,
+    Rgb16,
+    Rgb32F,
+    Rgba8,
+    Rgba16,
+    Rgba32F,
+}
+
+impl From<Format> for ImageFormat {
+    fn from(format: Format) -> Self {
+        match format {
+            Format::Avif => ImageFormat::Avif,
+            Format::Bmp => ImageFormat::Bmp,
+            Format::Dds => ImageFormat::Dds,
+            Format::Farbfeld => ImageFormat::Farbfeld,
+            Format::Gif => ImageFormat::Gif,
+            Format::Hdr => ImageFormat::Hdr,
+            Format::Ico => ImageFormat::Ico,
+            Format::Jpeg => ImageFormat::Jpeg,
+            Format::OpenExr => ImageFormat::OpenExr,
+            Format::Pcx => ImageFormat::Pcx,
+            Format::Png => ImageFormat::Png,
+            Format::Pnm => ImageFormat::Pnm,
+            Format::Qoi => ImageFormat::Qoi,
+            Format::Tga => ImageFormat::Tga,
+            Format::Tiff => ImageFormat::Tiff,
+            Format::WebP => ImageFormat::WebP,
+        }
+    }
+}
+
+impl From<ImageFormat> for Format {
+    fn from(format: ImageFormat) -> Self {
+        match format {
+            ImageFormat::Avif => Format::Avif,
+            ImageFormat::Bmp => Format::Bmp,
+            ImageFormat::Dds => Format::Dds,
+            ImageFormat::Farbfeld => Format::Farbfeld,
+            ImageFormat::Gif => Format::Gif,
+            ImageFormat::Hdr => Format::Hdr,
+            ImageFormat::Ico => Format::Ico,
+            ImageFormat::Jpeg => Format::Jpeg,
+            ImageFormat::OpenExr => Format::OpenExr,
+            ImageFormat::Pcx => Format::Pcx,
+            ImageFormat::Png => Format::Png,
+            ImageFormat::Pnm => Format::Pnm,
+            ImageFormat::Qoi => Format::Qoi,
+            ImageFormat::Tga => Format::Tga,
+            ImageFormat::Tiff => Format::Tiff,
+            ImageFormat::WebP => Format::WebP,
+            _ => panic!(
+                "Unsupported ImageFormat: {:?}. This should never happen, please open an issue or contact faycarsons23@gmail.com",
+                format
+            ),
+        }
+    }
+}
+
+impl From<image::ColorType> for ColorType {
+    fn from(color: image::ColorType) -> Self {
+        match color {
+            image::ColorType::L8 => ColorType::L8,
+            image::ColorType::L16 => ColorType::L16,
+            image::ColorType::La8 => ColorType::La8,
+            image::ColorType::La16 => ColorType::La16,
+            image::ColorType::Rgb8 => ColorType::Rgb8,
+            image::ColorType::Rgb16 => ColorType::Rgb16,
+            image::ColorType::Rgb32F => ColorType::Rgb32F,
+            image::ColorType::Rgba8 => ColorType::Rgba8,
+            image::ColorType::Rgba16 => ColorType::Rgba16,
+            image::ColorType::Rgba32F => ColorType::Rgba32F,
+            _ => panic!(
+                "Unsupported ColorType: {:?}. This should never happen, please open an issue or contact faycarsons23@gmail.com",
+                color
+            ),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct OptionalFormat {
+    pub has_value: bool,
+    pub value: Format,
+}
+
+impl OptionalFormat {
+    pub fn some(format: Format) -> Self {
+        Self {
+            has_value: true,
+            value: format,
+        }
+    }
+    
+    pub fn none() -> Self {
+        Self {
+            has_value: false,
+            value: Format::Png, // Default value, ignored when has_value is false
+        }
+    }
+}
+
+impl From<Option<Format>> for OptionalFormat {
+    fn from(opt: Option<Format>) -> Self {
+        match opt {
+            Some(format) => OptionalFormat::some(format),
+            None => OptionalFormat::none(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct ImageInfo {
+    pub width: u32,
+    pub height: u32,
+    pub format: OptionalFormat,
+    pub color: ColorType,
+    pub file_size: usize,
+    pub has_alpha: bool,
+    pub aspect_ratio: f64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_image_info(ctx: *mut Context, input_path: *const c_char) -> *mut ImageInfo {
+    if ctx.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::NullContext);
+            return std::ptr::null_mut();
+        }
+    }
+
+    if input_path.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::InvalidPath);
+            return std::ptr::null_mut();
+        }
+    }
+
+    let path = unsafe {
+        match CStr::from_ptr(input_path).to_str() {
+            Ok(path) => path,
+            Err(_) => {
+                *ctx = Context::failure(ImagoStatus::InvalidPath);
+                return std::ptr::null_mut();
+            }
+        }
+    };
+
+    match get_image_info_inner(path) {
+        Ok(info) => unsafe {
+            *ctx = Context::success();
+            let boxed = Box::new(info);
+            Box::into_raw(boxed)
+        },
+        Err(status) => unsafe {
+            *ctx = Context::failure(status);
+            std::ptr::null_mut()
+        },
+    }
+}
+
+fn get_image_info_inner(path: &str) -> Result<ImageInfo, ImagoStatus> {
+    let file_size = std::fs::metadata(path)
+        .or(Err(ImagoStatus::LoadFailed))?
+        .len() as usize;
+
+    let reader = ImageReader::open(path).or(Err(ImagoStatus::LoadFailed))?;
+
+    let format = reader.format().map(|fmt| fmt.into());
+
+    let (width, height) = reader.into_dimensions().or(Err(ImagoStatus::LoadFailed))?;
+
+    let img = ImageReader::open(path)
+        .or(Err(ImagoStatus::LoadFailed))?
+        .decode()
+        .or(Err(ImagoStatus::LoadFailed))?;
+
+    let color = img.color();
+
+    let has_alpha = {
+        use image::ColorType::*;
+
+        match color {
+            La8 | La16 | Rgba8 | Rgba16 | Rgba32F => true,
+            _ => false,
+        }
+    };
+
+    let aspect_ratio = width as f64 / height as f64;
+
+    Ok(ImageInfo {
+        width,
+        height,
+        format: format.into(),
+        color: color.into(),
+        file_size,
+        has_alpha,
+        aspect_ratio,
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn destroy_image_info(image_info: *mut ImageInfo) {
+    if !image_info.is_null() {
+        unsafe {
+            let _ = Box::from_raw(image_info);
+        }
+    }
 }
 
 pub struct Context(ImagoStatus);
@@ -367,7 +594,15 @@ pub unsafe extern "C" fn process_buffer(
         },
     };
 
-    let img = match image::load_from_memory(request.args.input_buffer) {
+    let img = match decode_image(request.args.input_buffer, request.args.input_format) {
+        Ok(img) => img,
+        Err(status) => unsafe {
+            *ctx = Context::failure(status);
+            return std::ptr::null_mut();
+        },
+    };
+
+    match image::load_from_memory(request.args.input_buffer) {
         Ok(img) => img,
         Err(_) => unsafe {
             (*ctx) = Context::failure(ImagoStatus::LoadFailed);
