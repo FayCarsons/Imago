@@ -152,6 +152,7 @@ data COperation
     | CGrayScale
     | CBrighten CInt
     | CContrast CFloat
+    | CQuality CUChar
     deriving (Show, Eq, Ord)
 
 operationTag :: COperation -> CUChar
@@ -163,6 +164,7 @@ operationTag = \case
     CGrayScale -> #{const GrayScale}
     CBrighten _ -> #{const Brighten} 
     CContrast _ -> #{const Contrast}
+    CQuality _ -> #{const Quality}
 
 instance Storable COperation where 
     sizeOf _ = #{size struct Operation}
@@ -184,6 +186,7 @@ instance Storable COperation where
             #{const Blur} -> CBlur <$> (#{peek struct Operation, blur} ptr :: IO CFloat)
             #{const Brighten} -> CBrighten <$> (#{peek struct Operation, brighten} ptr :: IO CInt)
             #{const Contrast} -> CContrast <$> (#{peek struct Operation, contrast} ptr :: IO CFloat)
+            #{const Quality} -> CQuality <$> (#{peek struct Operation, quality} ptr :: IO CUChar)
             tag -> error $ "Unknown operation tag: " ++ show tag
     poke ptr op = do 
         #{poke struct Operation, tag} ptr (operationTag op)
@@ -204,6 +207,8 @@ instance Storable COperation where
                 #{poke struct Operation, brighten} ptr brightness
             CContrast contrast ->
                 #{poke struct Operation, contrast} ptr contrast
+            CQuality quality ->
+                #{poke struct Operation, quality} ptr quality
 
 data Format 
     = Avif
@@ -329,7 +334,7 @@ data ImageInfo
     = ImageInfo
     { width :: Word32 
     , height :: Word32 
-    , format :: OptionalFormat 
+    , rawFormat :: OptionalFormat 
     , color :: ColorType 
     , fileSize :: CSize 
     , hasAlpha :: CBool 

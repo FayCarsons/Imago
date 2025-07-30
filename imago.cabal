@@ -24,7 +24,7 @@ common warnings
 library
     import:           warnings
     exposed-modules:  
-        Graphics.Imago
+        Graphics.Imago, Graphics.Imago.Info
     other-modules:    
         Graphics.LibImago
         , Graphics.Interface.Raw

@@ -9,7 +9,8 @@ name = "imago"
 
 [dependencies]
 bincode = "2.0.1"
-image = { version = "0.25.6", features = ["webp"] }
+image = { version = "0.25", features = ["webp"] }
+webp = "0.3"
 libc = "0.2.174"
 
 [build-dependencies]

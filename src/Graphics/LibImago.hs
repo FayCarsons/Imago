@@ -7,8 +7,14 @@ module Graphics.LibImago
     , Filter(..)
     , Format(..)
     , COperation(..)
+    , ImageInfo(..)
+    , ColorType(..)
+    , OptionalFormat(..)
     , rawProcessImage
     , rawProcessBuffer
+    , rawGetImageInfo
+    , rawGetBufferInfo
+    , getErrorMessage
     , printOperations
     ) where
 
@@ -17,7 +23,6 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Unsafe as BSU
 import           Data.Functor           ((<&>))
-import           Data.Maybe             (fromMaybe)
 import           Foreign
 import           Foreign.C
 import           Graphics.Interface.Raw
@@ -47,6 +52,9 @@ foreign import ccall "make_context"
 foreign import ccall "get_status"
     c_get_status :: Ptr Context -> IO CUChar
 
+foreign import ccall "get_error_message"
+    c_get_error_message :: Ptr Context -> IO (Ptr CChar)
+
 foreign import ccall "&destroy_context"
     c_destroy_context_ptr :: FunPtr (Ptr Context -> IO ())
 
@@ -56,7 +64,16 @@ foreign import ccall "&destroy_output_buffer"
 foreign import ccall "print_operations"
     c_print_operations :: Ptr COperation -> CSize -> IO ()
 
-rawProcessImage :: FilePath -> [COperation] -> Format -> IO (Either ImagoStatus ByteString)
+foreign import ccall "get_image_info"
+    c_get_image_info :: Ptr Context -> CString -> IO (Ptr ImageInfo)
+
+foreign import ccall "get_buffer_info"
+    c_get_buffer_info :: Ptr Context -> Ptr CUChar -> CSize -> IO (Ptr ImageInfo)
+
+foreign import ccall "&destroy_image_info"
+    c_destroy_image_info_finalizer :: FunPtr (Ptr ImageInfo -> IO ())
+
+rawProcessImage :: FilePath -> [COperation] -> Format -> IO (Either ByteString ByteString)
 rawProcessImage inputPath operations outputFormat = do
     context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
 
@@ -71,10 +88,9 @@ rawProcessImage inputPath operations outputFormat = do
     status <- fromC <$> withForeignPtr context c_get_status
     case (status, result == nullPtr) of
         (Ok, False) -> foreignSlice result >>= sliceToByteString <&> Right
-        (Ok, True)  -> return $ Left NullContext
-        (err, _)    -> return $ Left err
+        _           -> Left <$> withForeignPtr context getErrorMessage
 
-rawProcessBuffer :: ByteString -> Maybe Format -> [COperation] -> Format -> IO (Either ImagoStatus ByteString)
+rawProcessBuffer :: ByteString -> Maybe Format -> [COperation] -> Format -> IO (Either ByteString ByteString)
 rawProcessBuffer contents mFormat operations outputFormat = do
     -- Create context with ForeignPtr
     context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
@@ -108,8 +124,50 @@ rawProcessBuffer contents mFormat operations outputFormat = do
     status <- fromC <$> withForeignPtr context c_get_status
     case (status, result == nullPtr) of
         (Ok, False) -> foreignSlice result >>= sliceToByteString <&> Right
-        (Ok, True)  -> return $ Left NullContext
-        (err, _)    -> return $ Left err
+        _           -> Left <$> withForeignPtr context getErrorMessage
+
+rawGetImageInfo :: FilePath -> IO (Either ByteString ImageInfo)
+rawGetImageInfo path = do
+    context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
+
+    result <-
+        withCString path $ \pathPtr ->
+            withForeignPtr context $ \ctx ->
+                c_get_image_info ctx pathPtr
+
+    status <- fromC <$> withForeignPtr context c_get_status
+    case (status, result == nullPtr) of
+        (Ok, False) -> do
+            -- Create ForeignPtr with finalizer for automatic cleanup
+            infoPtr <- newForeignPtr c_destroy_image_info_finalizer result
+            info <- withForeignPtr infoPtr peek
+            return $ Right info
+        _  -> Left <$> withForeignPtr context getErrorMessage
+
+rawGetBufferInfo :: ByteString -> IO (Either ByteString ImageInfo)
+rawGetBufferInfo buffer = do
+    context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
+
+    result <-
+        BSU.unsafeUseAsCStringLen buffer $ \(bufferPtr, bufferLen) ->
+            withForeignPtr context $ \ctx ->
+                c_get_buffer_info ctx (castPtr bufferPtr) (fromIntegral bufferLen)
+
+    status <- fromC <$> withForeignPtr context c_get_status
+    case (status, result == nullPtr) of
+        (Ok, False) -> do
+            -- Create ForeignPtr with finalizer for automatic cleanup
+            infoPtr <- newForeignPtr c_destroy_image_info_finalizer result
+            info <- withForeignPtr infoPtr peek
+            return $ Right info
+        _  -> Left <$> withForeignPtr context getErrorMessage
+
+getErrorMessage :: Ptr Context -> IO ByteString
+getErrorMessage ctx = do
+    errorPtr <- c_get_error_message ctx
+    if errorPtr == nullPtr
+        then return BS.empty
+        else BS.packCString (castPtr errorPtr)
 
 -- For debugging marshalling
 printOperations :: [COperation] -> IO ()

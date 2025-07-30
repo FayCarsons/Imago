@@ -20,13 +20,14 @@ module Graphics.Imago
     , blur
     , brighten
     , contrast
+    , quality
     , runFileTransform
     , runBufferTransform
     ) where
 
 import           Control.Monad.Free    (Free (..), MonadFree, liftF)
 import           Control.Monad.Free.TH
-import           Data.Binary           (Word32)
+import           Data.Binary           (Word32, Word8)
 import           Data.ByteString       (ByteString)
 import           Foreign               (fromBool)
 import           Graphics.LibImago
@@ -46,6 +47,7 @@ data Transform a
     | Blur Float a
     | Brighten Int a
     | Contrast Float a
+    | Quality Word8 a
     deriving (Show, Eq, Ord, Functor)
 
 makeFree ''Transform
@@ -63,12 +65,14 @@ unfold (Free op) =
         Blur rad next -> CBlur (realToFrac rad) : unfold next
         Brighten fac next -> CBrighten (fromIntegral fac) : unfold next
         Contrast fac next -> CContrast (realToFrac fac) : unfold next
+        Quality qual next -> CQuality (fromIntegral qual) : unfold next
 
 
-runFileTransform :: FilePath -> Format -> TransformM () -> IO (Either ImagoStatus ByteString)
+runFileTransform :: FilePath -> Format -> TransformM () -> IO (Either ByteString ByteString)
 runFileTransform path fmt transform =
     rawProcessImage path (unfold transform) fmt
 
-runBufferTransform :: ByteString -> Maybe Format -> Format -> TransformM () -> IO (Either ImagoStatus ByteString)
+runBufferTransform :: ByteString -> Maybe Format -> Format -> TransformM () -> IO (Either ByteString ByteString)
 runBufferTransform contents inputFormat outputFormat transform =
     rawProcessBuffer contents inputFormat (unfold transform) outputFormat
+
