@@ -41,10 +41,10 @@ sliceToByteString slice = withForeignPtr slice (peek >=> unsafeToByteString)
 data Context
 
 foreign import ccall "process_image"
-    c_process_image_raw :: Ptr Context -> CString -> Ptr COperation -> CSize -> Ptr Format -> IO (Ptr RawSlice)
+    c_process_image_raw :: Ptr Context -> CString -> Ptr COperation -> CSize -> IO (Ptr RawSlice)
 
 foreign import ccall "process_buffer"
-    c_process_buffer_raw :: Ptr Context -> Ptr CChar -> CSize -> Ptr Format -> Ptr COperation -> CSize -> Ptr Format -> IO (Ptr RawSlice)
+    c_process_buffer_raw :: Ptr Context -> Ptr CChar -> CSize -> Ptr Format -> Ptr COperation -> CSize -> IO (Ptr RawSlice)
 
 foreign import ccall "make_context"
     c_make_context :: IO (Ptr Context)
@@ -54,6 +54,9 @@ foreign import ccall "get_status"
 
 foreign import ccall "get_error_message"
     c_get_error_message :: Ptr Context -> IO (Ptr CChar)
+
+foreign import ccall "&destroy_error_message"
+    c_destroy_error_message_finalizer :: FunPtr (Ptr CChar -> IO ())
 
 foreign import ccall "&destroy_context"
     c_destroy_context_ptr :: FunPtr (Ptr Context -> IO ())
@@ -73,32 +76,32 @@ foreign import ccall "get_buffer_info"
 foreign import ccall "&destroy_image_info"
     c_destroy_image_info_finalizer :: FunPtr (Ptr ImageInfo -> IO ())
 
-rawProcessImage :: FilePath -> [COperation] -> Format -> IO (Either ByteString ByteString)
-rawProcessImage inputPath operations outputFormat = do
+rawProcessImage :: FilePath -> [COperation] -> IO (Either ByteString ByteString)
+rawProcessImage inputPath operations = do
     context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
 
     result <- withCString inputPath $ \pathCStr ->
                 withArray operations $ \opsArray ->
-                    with outputFormat $ \formatPtr ->
-                        withForeignPtr context $ \ctx ->
-                                c_process_image_raw ctx pathCStr opsArray
-                                                    (fromIntegral $ length operations)
-                                                    formatPtr
+                    withForeignPtr context $ \ctx ->
+                            c_process_image_raw
+                                ctx
+                                pathCStr
+                                opsArray
+                                (fromIntegral $ length operations)
 
     status <- fromC <$> withForeignPtr context c_get_status
     case (status, result == nullPtr) of
         (Ok, False) -> foreignSlice result >>= sliceToByteString <&> Right
         _           -> Left <$> withForeignPtr context getErrorMessage
 
-rawProcessBuffer :: ByteString -> Maybe Format -> [COperation] -> Format -> IO (Either ByteString ByteString)
-rawProcessBuffer contents mFormat operations outputFormat = do
+rawProcessBuffer :: ByteString -> Maybe Format -> [COperation] -> IO (Either ByteString ByteString)
+rawProcessBuffer contents mFormat operations = do
     -- Create context with ForeignPtr
     context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
 
     result <-
         BSU.unsafeUseAsCStringLen contents $ \(contentPtr, contentLen) ->
             withArray operations $ \operationsPtr ->
-                with outputFormat $ \outputFormatPtr ->
                     withForeignPtr context $ \ctx ->
                         case mFormat of
                             Just format ->
@@ -110,7 +113,6 @@ rawProcessBuffer contents mFormat operations outputFormat = do
                                         inputFormat
                                         operationsPtr
                                         (fromIntegral $ length operations)
-                                        outputFormatPtr
                             Nothing ->
                                     c_process_buffer_raw
                                         ctx
@@ -119,7 +121,6 @@ rawProcessBuffer contents mFormat operations outputFormat = do
                                         nullPtr
                                         operationsPtr
                                         (fromIntegral $ length operations)
-                                        outputFormatPtr
 
     status <- fromC <$> withForeignPtr context c_get_status
     case (status, result == nullPtr) of
@@ -164,10 +165,8 @@ rawGetBufferInfo buffer = do
 
 getErrorMessage :: Ptr Context -> IO ByteString
 getErrorMessage ctx = do
-    errorPtr <- c_get_error_message ctx
-    if errorPtr == nullPtr
-        then return BS.empty
-        else BS.packCString (castPtr errorPtr)
+    errorPtr <- c_get_error_message ctx >>= newForeignPtr c_destroy_error_message_finalizer
+    withForeignPtr errorPtr BS.packCString
 
 -- For debugging marshalling
 printOperations :: [COperation] -> IO ()

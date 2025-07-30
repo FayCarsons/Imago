@@ -1,6 +1,8 @@
 use image::DynamicImage;
 use image::imageops::FilterType as ImageFilter;
 
+use crate::Format;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum FilterType {
@@ -54,17 +56,23 @@ pub enum Operation {
     Brighten(i32),
     Contrast(f32),
     Quality(u8), // Image quality 1-100
+    Convert(Format),
 }
 
 /// State held while interpreting operations slice
 pub struct Interpreter {
     pub img: DynamicImage,
     pub quality: Option<u8>, // Image quality 1-100
+    pub output_format: Option<Format>,
 }
 
 impl Interpreter {
     pub fn new(img: DynamicImage) -> Self {
-        Self { img, quality: None }
+        Self {
+            img,
+            quality: None,
+            output_format: None,
+        }
     }
 }
 
@@ -122,6 +130,10 @@ pub fn apply_operation(mut state: Interpreter, operation: &Operation) -> Interpr
         },
         Operation::Quality(quality) => {
             state.quality = Some(*quality);
+            state
+        }
+        Operation::Convert(fmt) => {
+            state.output_format = Some(*fmt);
             state
         }
     }

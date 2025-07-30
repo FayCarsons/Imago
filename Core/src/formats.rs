@@ -1,4 +1,7 @@
-use crate::error::{ImagoError, ImagoStatus};
+use crate::{
+    error::{ImagoError, ImagoStatus},
+    operations::Interpreter,
+};
 use image::{DynamicImage, ImageFormat};
 use std::io::Cursor;
 
@@ -153,45 +156,45 @@ pub fn decode_image(bytes: &[u8], format: Option<Format>) -> Result<DynamicImage
 }
 
 pub fn encode_image(
-    img: &DynamicImage,
-    format: &Format,
-    quality: Option<u8>,
+    Interpreter {
+        img,
+        output_format,
+        quality,
+    }: Interpreter,
 ) -> Result<Vec<u8>, ImagoError> {
-    let mut output = Vec::new();
-    let mut cursor = Cursor::new(&mut output);
+    match output_format {
+        Some(image_format) => {
+            let mut output = Vec::new();
+            let mut cursor = Cursor::new(&mut output);
+            if let Some(q) = quality {
+                let quality = q.clamp(1, 100);
+                match image_format {
+                    Format::Jpeg => {
+                        use image::codecs::jpeg::JpegEncoder;
+                        let encoder = JpegEncoder::new_with_quality(&mut cursor, quality);
+                        img.write_with_encoder(encoder)
+                            .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
+                    }
+                    Format::WebP => {
+                        use image::codecs::webp::WebPEncoder;
+                        let encoder = WebPEncoder::new_lossless(&mut cursor);
+                        img.write_with_encoder(encoder)
+                            .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
+                    }
+                    _ => {
+                        // For formats that don't support quality, fall back to default encoding
+                        img.write_to(&mut cursor, image_format.into())
+                            .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
+                    }
+                }
+            } else {
+                // No quality specified, use default encoding
+                img.write_to(&mut cursor, image_format.into())
+                    .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
+            }
 
-    let image_format: ImageFormat = (*format).into();
-
-    // For formats that support quality settings, use the specific encoder
-    if let Some(q) = quality {
-        let quality = q.clamp(1, 100);
-        match format {
-            Format::Jpeg => {
-                use image::codecs::jpeg::JpegEncoder;
-                let encoder = JpegEncoder::new_with_quality(&mut cursor, quality);
-                img.write_with_encoder(encoder)
-                    .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
-            }
-            Format::WebP => {
-                // Use the dedicated webp crate for quality-controlled encoding
-                let encoder = webp::Encoder::from_image(img)
-                    .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
-                let webp_data = encoder.encode(quality as f32);
-                output = webp_data.to_vec();
-                // Skip the default cursor writing since we already have the data
-                return Ok(output);
-            }
-            _ => {
-                // For formats that don't support quality, fall back to default encoding
-                img.write_to(&mut cursor, image_format)
-                    .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
-            }
+            Ok(output)
         }
-    } else {
-        // No quality specified, use default encoding
-        img.write_to(&mut cursor, image_format)
-            .map_err(|e| ImagoError::new(ImagoStatus::EncodeFailed, e))?;
+        None => Ok(img.into_bytes()),
     }
-
-    Ok(output)
 }

@@ -153,6 +153,7 @@ data COperation
     | CBrighten CInt
     | CContrast CFloat
     | CQuality CUChar
+    | CConvert Format
     deriving (Show, Eq, Ord)
 
 operationTag :: COperation -> CUChar
@@ -165,6 +166,7 @@ operationTag = \case
     CBrighten _ -> #{const Brighten} 
     CContrast _ -> #{const Contrast}
     CQuality _ -> #{const Quality}
+    CConvert _ -> #{const Convert}
 
 instance Storable COperation where 
     sizeOf _ = #{size struct Operation}
@@ -187,6 +189,7 @@ instance Storable COperation where
             #{const Brighten} -> CBrighten <$> (#{peek struct Operation, brighten} ptr :: IO CInt)
             #{const Contrast} -> CContrast <$> (#{peek struct Operation, contrast} ptr :: IO CFloat)
             #{const Quality} -> CQuality <$> (#{peek struct Operation, quality} ptr :: IO CUChar)
+            #{const Convert} -> CConvert <$> (#{peek struct Operation, convert} ptr :: IO Format)
             tag -> error $ "Unknown operation tag: " ++ show tag
     poke ptr op = do 
         #{poke struct Operation, tag} ptr (operationTag op)
@@ -209,6 +212,8 @@ instance Storable COperation where
                 #{poke struct Operation, contrast} ptr contrast
             CQuality quality ->
                 #{poke struct Operation, quality} ptr quality
+            CConvert format -> 
+                #{poke struct Operation, convert} ptr format
 
 data Format 
     = Avif

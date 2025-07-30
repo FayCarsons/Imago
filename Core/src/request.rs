@@ -1,9 +1,9 @@
-use std::ffi::CStr;
-use std::os::raw::c_char;
-use std::slice;
 use crate::error::{ImagoError, ImagoStatus};
 use crate::formats::Format;
 use crate::operations::Operation;
+use std::ffi::CStr;
+use std::os::raw::c_char;
+use std::slice;
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -13,6 +13,15 @@ pub struct ByteArray {
 }
 
 impl ByteArray {
+    pub const NULL: Self = ByteArray {
+        len: 0,
+        data: std::ptr::null(),
+    };
+
+    pub unsafe fn new(data: *const u8, len: usize) -> Self {
+        Self { data, len }
+    }
+
     pub fn failure_string() -> *mut Self {
         let s = "Failure";
 
@@ -22,6 +31,14 @@ impl ByteArray {
         });
 
         Box::into_raw(this)
+    }
+
+    pub fn to_string_lossy(&self) -> String {
+        if self.data.is_null() || self.len == 0 {
+            return String::new();
+        }
+        let slice = unsafe { slice::from_raw_parts(self.data, self.len) };
+        String::from_utf8_lossy(slice).to_string()
     }
 }
 
@@ -106,7 +123,6 @@ pub fn decode_output_format(fmt: *const Format) -> Option<Format> {
 pub struct Request<'a, A: Arguments> {
     pub args: A,
     pub pipeline: &'a [Operation],
-    pub output_format: Format,
 }
 
 impl<'a> Request<'a, FileArgs<'a>> {
@@ -114,7 +130,6 @@ impl<'a> Request<'a, FileArgs<'a>> {
         input_path: *const c_char,
         operations_data: *const Operation,
         operations_len: usize,
-        output_format: *const Format,
     ) -> Result<Self, ImagoError> {
         let args = FileArgs::decode(input_path)
             .ok_or_else(|| ImagoError::new(ImagoStatus::InvalidPath, "Invalid file path"))?;
@@ -124,18 +139,8 @@ impl<'a> Request<'a, FileArgs<'a>> {
                 "Internal error: operation pipline null or otherwise invalid",
             )
         })?;
-        let output_format = decode_output_format(output_format).ok_or_else(|| {
-            ImagoError::new(
-                ImagoStatus::InvalidOutputFormat,
-                "Internal error, null or otherwise invalid output format",
-            )
-        })?;
 
-        Ok(Self {
-            args,
-            pipeline,
-            output_format,
-        })
+        Ok(Self { args, pipeline })
     }
 }
 
@@ -146,7 +151,6 @@ impl<'a> Request<'a, BufferArgs<'a>> {
         input_format: Option<*const Format>,
         operations_data: *const Operation,
         operations_len: usize,
-        output_format: *const Format,
     ) -> Result<Self, ImagoError> {
         let args = BufferArgs::decode(buffer_data, buffer_len, input_format)?;
         let pipeline = decode_pipeline(operations_data, operations_len).ok_or_else(|| {
@@ -155,17 +159,7 @@ impl<'a> Request<'a, BufferArgs<'a>> {
                 "Internal error, null or otherwise invalid operation pipeline",
             )
         })?;
-        let output_format = decode_output_format(output_format).ok_or_else(|| {
-            ImagoError::new(
-                ImagoStatus::InvalidOutputFormat,
-                "Internal error, null output format",
-            )
-        })?;
 
-        Ok(Self {
-            args,
-            pipeline,
-            output_format,
-        })
+        Ok(Self { args, pipeline })
     }
 }

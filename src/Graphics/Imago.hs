@@ -21,6 +21,7 @@ module Graphics.Imago
     , brighten
     , contrast
     , quality
+    , convert
     , runFileTransform
     , runBufferTransform
     ) where
@@ -48,6 +49,7 @@ data Transform a
     | Brighten Int a
     | Contrast Float a
     | Quality Word8 a
+    | Convert Format a
     deriving (Show, Eq, Ord, Functor)
 
 makeFree ''Transform
@@ -66,13 +68,14 @@ unfold (Free op) =
         Brighten fac next -> CBrighten (fromIntegral fac) : unfold next
         Contrast fac next -> CContrast (realToFrac fac) : unfold next
         Quality qual next -> CQuality (fromIntegral qual) : unfold next
+        Convert format next -> CConvert format : unfold next
 
 
-runFileTransform :: FilePath -> Format -> TransformM () -> IO (Either ByteString ByteString)
-runFileTransform path fmt transform =
-    rawProcessImage path (unfold transform) fmt
+runFileTransform :: FilePath -> TransformM () -> IO (Either ByteString ByteString)
+runFileTransform path transform =
+    rawProcessImage path (unfold transform)
 
-runBufferTransform :: ByteString -> Maybe Format -> Format -> TransformM () -> IO (Either ByteString ByteString)
-runBufferTransform contents inputFormat outputFormat transform =
-    rawProcessBuffer contents inputFormat (unfold transform) outputFormat
+runBufferTransform :: ByteString -> Maybe Format -> TransformM () -> IO (Either ByteString ByteString)
+runBufferTransform contents inputFormat transform =
+    rawProcessBuffer contents inputFormat (unfold transform)
 

@@ -1,3 +1,5 @@
+use crate::ByteArray;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum ImagoStatus {
@@ -15,13 +17,13 @@ pub enum ImagoStatus {
 
 pub struct ImagoError {
     pub status: ImagoStatus,
-    pub error: [u8; 128],
+    pub error: ByteArray,
 }
 
 impl ImagoError {
     pub const NULL: Self = Self {
         status: ImagoStatus::OK,
-        error: [0; 128],
+        error: ByteArray::NULL,
     };
 
     pub fn new<S>(status: ImagoStatus, message: S) -> Self
@@ -29,14 +31,9 @@ impl ImagoError {
         S: ToString,
     {
         let message = message.to_string();
-        let mut error = [0u8; 128];
 
-        unsafe {
-            message
-                .as_ptr()
-                .copy_to_nonoverlapping(error.as_mut_ptr(), message.len().max(error.len()));
-        }
-
+        let (data, len, _) = message.into_raw_parts();
+        let error = unsafe { ByteArray::new(data, len) };
         Self { status, error }
     }
 }
