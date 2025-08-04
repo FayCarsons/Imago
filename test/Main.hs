@@ -11,12 +11,12 @@ program = do
 
 main :: IO ()
 main = do
-    Imago.runFileTransform "TEST.jpeg" program
+    Imago.runFileTransform "THUMBNAIL_TEST.png" program
         >>= either (error . show) (BS.writeFile "FILE-OUTPUT.png")
 
     putStrLn "File transform OK"
 
-    buf <- BS.readFile "TEST.jpeg"
-    Imago.runBufferTransform buf Nothing program
+    buf <- BS.readFile "THUMBNAIL_TEST.png"
+    Imago.runBufferTransform buf (Just Imago.Png) program
         >>= either (error . show) (BS.writeFile "BUFFER-OUTPUT.png")
 
