@@ -1,10 +1,15 @@
 module Main (main) where
 
-import qualified Data.ByteString as BS
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import qualified Data.ByteString.Char8 as BS
+import Data.Either (isRight)
 import Data.Word (Word32)
 import Graphics.Imago (Filter (..), TransformM)
 import qualified Graphics.Imago as Imago
 import qualified Graphics.Imago.Info as Imago
+import Test.Hspec
+
+orFail = either (expectationFailure . BS.unpack) (const $ return ())
 
 program :: TransformM ()
 program = do
@@ -12,24 +17,30 @@ program = do
   Imago.convert Imago.Png
 
 main :: IO ()
-main = do
-  Imago.runFileTransform "THUMBNAIL_TEST.png" program
-    >>= either (error . show) (BS.writeFile "FILE-OUTPUT.png")
+main = hspec $ do
+  describe "Simple Transformations" $ do
+    it "Resizes an image (from path) and converts to WebP" $ do
+      result <- Imago.runFileTransform "THUMBNAIL_TEST.png" program
+      orFail result
 
-  putStrLn "File transform OK"
+    it "Resizes an image (from buffer) and converts to WebP" $ do
+      contents <- BS.readFile "THUMBNAIL_TEST.png"
+      result <- Imago.runBufferTransform contents (Just Imago.Png) program
+      orFail result
 
-  buf <- BS.readFile "THUMBNAIL_TEST.png"
-  Imago.runBufferTransform buf (Just Imago.Png) program
-    >>= either (error . show) (BS.writeFile "BUFFER-OUTPUT.png")
+  describe "Image information" $ do
+    it "Gets image information" $ do
+      buf <- liftIO $ BS.readFile "THUMBNAIL_TEST.png"
+      info <- Imago.getBufferInfo buf
+      orFail info
 
-  putStrLn "Buffer transform OK"
-
-  info <- Imago.getBufferInfo buf >>= either (error . show) return
-  let transform = thumbnailTransform (Imago.width info, Imago.height info)
-  Imago.runBufferTransform buf Nothing transform
-    >>= either (error . show) (BS.writeFile "THUMBNAIL_OUTPUT.webp")
-
-  putStrLn "Thumbnail transform OK"
+  describe "Transformations requiring info" $ do
+    it "Resizes and converts to WebP, with no initial format" $ do
+      buf <- liftIO $ BS.readFile "THUMBNAIL_TEST.png"
+      info <- liftIO (Imago.getBufferInfo buf) >>= either (error . BS.unpack) return
+      let transform = thumbnailTransform (Imago.width info, Imago.height info)
+      result <- Imago.runBufferTransform buf Nothing transform
+      orFail result
  where
   ratio :: Word32 -> Float -> Word32
   ratio n r = floor $ r * fromIntegral n
