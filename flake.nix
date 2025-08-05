@@ -27,11 +27,8 @@
             ghcid
             stylish-haskell
 
-            # Rust toolchain
             rustup
             rust-analyzer
-            wasm-pack
-            wrangler
 
             pkg-config
           ];
