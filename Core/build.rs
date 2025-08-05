@@ -18,12 +18,14 @@ fn go() -> std::io::Result<()> {
         "libimago.so"
     };
 
+    let dst_dir = Path::new("../cbits");
     let src = target_dir.join(lib_name);
-    let dst = Path::new("../cbits").join(lib_name);
+    let dst = dst_dir.join(lib_name);
 
     if src.exists() {
         fs::create_dir_all("../cbits")?;
         fs::copy(&src, &dst)?;
+        fs::copy(&target_dir.join("libimago.a"), dst_dir.join("libimago.a"))?;
         println!("Copied executable {src:?} to {dst:?}");
     }
 

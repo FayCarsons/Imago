@@ -46,28 +46,28 @@ data ImagoStatus
 
 instance CEnum ImagoStatus where 
     fromC = \case 
-        #{const OK} -> Ok 
-        #{const InvalidPath} -> InvalidPath
-        #{const InvalidInputBuffer} -> InvalidInputBuffer
-        #{const InvalidOperation} -> InvalidOperation
-        #{const InvalidInputFormat} -> InvalidInputFormat
-        #{const InvalidOutputFormat} -> InvalidOutputFormat
-        #{const LoadFailed} -> LoadFailed
-        #{const EncodeFailed} -> EncodeFailed
-        #{const NullContext} -> NullContext
-        #{const UnsupportedImageFormat} -> UnsupportedImageFormat
-        tag -> error $ "Unknown Imago Status tag: " ++ show tag
+      #{const OK} -> Ok 
+      #{const InvalidPath} -> InvalidPath
+      #{const InvalidInputBuffer} -> InvalidInputBuffer
+      #{const InvalidOperation} -> InvalidOperation
+      #{const InvalidInputFormat} -> InvalidInputFormat
+      #{const InvalidOutputFormat} -> InvalidOutputFormat
+      #{const LoadFailed} -> LoadFailed
+      #{const EncodeFailed} -> EncodeFailed
+      #{const NullContext} -> NullContext
+      #{const UnsupportedImageFormat} -> UnsupportedImageFormat
+      tag -> error $ "Unknown Imago Status tag: " ++ show tag
     toC = \case 
-        Ok -> #{const OK}
-        InvalidPath -> #{const InvalidPath}
-        InvalidInputBuffer -> #{const InvalidInputBuffer}
-        InvalidOperation -> #{const InvalidOperation}
-        InvalidInputFormat -> #{const InvalidInputFormat}
-        InvalidOutputFormat -> #{const InvalidOutputFormat}
-        UnsupportedImageFormat -> #{const UnsupportedImageFormat}
-        LoadFailed -> #{const LoadFailed}
-        EncodeFailed -> #{const EncodeFailed}
-        NullContext -> #{const NullContext}
+      Ok -> #{const OK}
+      InvalidPath -> #{const InvalidPath}
+      InvalidInputBuffer -> #{const InvalidInputBuffer}
+      InvalidOperation -> #{const InvalidOperation}
+      InvalidInputFormat -> #{const InvalidInputFormat}
+      InvalidOutputFormat -> #{const InvalidOutputFormat}
+      UnsupportedImageFormat -> #{const UnsupportedImageFormat}
+      LoadFailed -> #{const LoadFailed}
+      EncodeFailed -> #{const EncodeFailed}
+      NullContext -> #{const NullContext}
 
 instance Storable ImagoStatus where 
     sizeOf _ = sizeOf (0 :: CUChar)
@@ -83,14 +83,14 @@ data Degree
 
 instance CEnum Degree where 
     fromC = \case 
-        #{const Deg90} -> Deg90
-        #{const Deg180} -> Deg180
-        #{const Deg270} -> Deg270
-        tag -> error $ "Unknown 'Degree' tag: " ++ show tag
+      #{const Deg90} -> Deg90
+      #{const Deg180} -> Deg180
+      #{const Deg270} -> Deg270
+      tag -> error $ "Unknown 'Degree' tag: " ++ show tag
     toC = \case 
-        Deg90 -> #{const Deg90}
-        Deg180 -> #{const Deg180}
-        Deg270 -> #{const Deg270}        
+      Deg90 -> #{const Deg90}
+      Deg180 -> #{const Deg180}
+      Deg270 -> #{const Deg270}        
 
 instance Storable Degree where 
     sizeOf _ = sizeOf (0 :: CUChar)
@@ -102,12 +102,12 @@ data Direction = Horizontal | Vertical deriving (Show, Eq, Ord)
 
 instance CEnum Direction where 
     fromC = \case 
-        #{const Horizontal} -> Horizontal
-        #{const Vertical} -> Vertical
-        tag -> error $ "Invalid direction tag: " ++ show tag
+      #{const Horizontal} -> Horizontal
+      #{const Vertical} -> Vertical
+      tag -> error $ "Invalid direction tag: " ++ show tag
     toC = \case 
-        Horizontal -> #{const Horizontal}
-        Vertical -> #{const Vertical}
+      Horizontal -> #{const Horizontal}
+      Vertical -> #{const Vertical}
 
 instance Storable Direction where 
     sizeOf _ = sizeOf (0 :: CUChar)
@@ -125,12 +125,12 @@ data Filter
 
 instance CEnum Filter where 
     fromC = \case 
-        #{const Nearest} -> Nearest
-        #{const Triangle} -> Triangle
-        #{const CatmullRom} -> CatmullRom
-        #{const Gaussian} -> Gaussian
-        #{const Lanczos3} -> Lanczos3
-        tag -> error $ "Unknown 'Filter' tag: " ++ show tag
+      #{const Nearest} -> Nearest
+      #{const Triangle} -> Triangle
+      #{const CatmullRom} -> CatmullRom
+      #{const Gaussian} -> Gaussian
+      #{const Lanczos3} -> Lanczos3
+      tag -> error $ "Unknown 'Filter' tag: " ++ show tag
     toC = \case 
         Nearest -> #{const Nearest}
         Triangle -> #{const Triangle}
