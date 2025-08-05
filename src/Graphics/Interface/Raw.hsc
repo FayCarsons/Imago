@@ -132,11 +132,11 @@ instance CEnum Filter where
       #{const Lanczos3} -> Lanczos3
       tag -> error $ "Unknown 'Filter' tag: " ++ show tag
     toC = \case 
-        Nearest -> #{const Nearest}
-        Triangle -> #{const Triangle}
-        CatmullRom -> #{const CatmullRom}
-        Gaussian -> #{const Gaussian}
-        Lanczos3 -> #{const Lanczos3}
+      Nearest -> #{const Nearest}
+      Triangle -> #{const Triangle}
+      CatmullRom -> #{const CatmullRom}
+      Gaussian -> #{const Gaussian}
+      Lanczos3 -> #{const Lanczos3}
 
 instance Storable Filter where 
     sizeOf _ = sizeOf (0 :: CUChar)
@@ -158,15 +158,15 @@ data COperation
 
 operationTag :: COperation -> CUChar
 operationTag = \case
-    CResize _ _ _ _ -> #{const Resize}
-    CRotate _ -> #{const Rotate}
-    CFlip _ -> #{const Flip}
-    CBlur _ -> #{const Blur}
-    CGrayScale -> #{const GrayScale}
-    CBrighten _ -> #{const Brighten} 
-    CContrast _ -> #{const Contrast}
-    CQuality _ -> #{const Quality}
-    CConvert _ -> #{const Convert}
+  CResize _ _ _ _ -> #{const Resize}
+  CRotate _ -> #{const Rotate}
+  CFlip _ -> #{const Flip}
+  CBlur _ -> #{const Blur}
+  CGrayScale -> #{const GrayScale}
+  CBrighten _ -> #{const Brighten} 
+  CContrast _ -> #{const Contrast}
+  CQuality _ -> #{const Quality}
+  CConvert _ -> #{const Convert}
 
 instance Storable COperation where 
     sizeOf _ = #{size struct Operation}
@@ -236,40 +236,40 @@ data Format
 
 instance CEnum Format where 
     fromC = \case 
-        #{const Avif} -> Avif
-        #{const Bmp} -> Bmp
-        #{const Dds} -> Dds
-        #{const Farbfeld} -> Farbfeld
-        #{const Gif} -> Gif
-        #{const Hdr} -> Hdr
-        #{const Ico} -> Ico
-        #{const Jpeg} -> Jpeg
-        #{const OpenExr} -> OpenExr
-        #{const Pcx} -> Pcx
-        #{const Png} -> Png
-        #{const Pnm} -> Pnm
-        #{const Qoi} -> Qoi
-        #{const Tga} -> Tga
-        #{const Tiff} -> Tiff
-        #{const WebP} -> WebP
-        tag -> error $ "Unknown 'Format' tag: " ++ show tag
+      #{const Avif} -> Avif
+      #{const Bmp} -> Bmp
+      #{const Dds} -> Dds
+      #{const Farbfeld} -> Farbfeld
+      #{const Gif} -> Gif
+      #{const Hdr} -> Hdr
+      #{const Ico} -> Ico
+      #{const Jpeg} -> Jpeg
+      #{const OpenExr} -> OpenExr
+      #{const Pcx} -> Pcx
+      #{const Png} -> Png
+      #{const Pnm} -> Pnm
+      #{const Qoi} -> Qoi
+      #{const Tga} -> Tga
+      #{const Tiff} -> Tiff
+      #{const WebP} -> WebP
+      tag -> error $ "Unknown 'Format' tag: " ++ show tag
     toC = \case 
-        Avif -> #{const Avif}
-        Bmp -> #{const Bmp}
-        Dds -> #{const Dds}
-        Farbfeld -> #{const Farbfeld}
-        Gif -> #{const Gif}
-        Hdr -> #{const Hdr}
-        Ico -> #{const Ico}
-        Jpeg -> #{const Jpeg}
-        OpenExr -> #{const OpenExr}
-        Pcx -> #{const Pcx}
-        Png -> #{const Png}
-        Pnm -> #{const Pnm}
-        Qoi -> #{const Qoi}
-        Tga -> #{const Tga}
-        Tiff -> #{const Tiff}
-        WebP -> #{const WebP}
+      Avif -> #{const Avif}
+      Bmp -> #{const Bmp}
+      Dds -> #{const Dds}
+      Farbfeld -> #{const Farbfeld}
+      Gif -> #{const Gif}
+      Hdr -> #{const Hdr}
+      Ico -> #{const Ico}
+      Jpeg -> #{const Jpeg}
+      OpenExr -> #{const OpenExr}
+      Pcx -> #{const Pcx}
+      Png -> #{const Png}
+      Pnm -> #{const Pnm}
+      Qoi -> #{const Qoi}
+      Tga -> #{const Tga}
+      Tiff -> #{const Tiff}
+      WebP -> #{const WebP}
 
 instance Storable Format where 
     sizeOf _ = sizeOf (0 :: CUChar)
@@ -292,28 +292,28 @@ data ColorType
 
 instance CEnum ColorType where 
     fromC = \case 
-        #{const L8} -> L8
-        #{const L16} -> L16
-        #{const La8} -> La8
-        #{const La16} -> La16
-        #{const Rgb8} -> Rgb8
-        #{const Rgb16} -> Rgb16
-        #{const Rgb32F} -> Rgb32F
-        #{const Rgba8} -> Rgba8
-        #{const Rgba16} -> Rgba16
-        #{const Rgba32F} -> Rgba32F
-        tag -> error $ "Unknown 'ColorType' tag: " ++ show tag
+      #{const L8} -> L8
+      #{const L16} -> L16
+      #{const La8} -> La8
+      #{const La16} -> La16
+      #{const Rgb8} -> Rgb8
+      #{const Rgb16} -> Rgb16
+      #{const Rgb32F} -> Rgb32F
+      #{const Rgba8} -> Rgba8
+      #{const Rgba16} -> Rgba16
+      #{const Rgba32F} -> Rgba32F
+      tag -> error $ "Unknown 'ColorType' tag: " ++ show tag
     toC = \case 
-        L8 -> #{const L8}
-        L16 -> #{const L16}
-        La8 -> #{const La8}
-        La16 -> #{const La16}
-        Rgb8 -> #{const Rgb8}
-        Rgb16 -> #{const Rgb16}
-        Rgb32F -> #{const Rgb32F}
-        Rgba8 -> #{const Rgba8}
-        Rgba16 -> #{const Rgba16}
-        Rgba32F -> #{const Rgba32F}
+      L8 -> #{const L8}
+      L16 -> #{const L16}
+      La8 -> #{const La8}
+      La16 -> #{const La16}
+      Rgb8 -> #{const Rgb8}
+      Rgb16 -> #{const Rgb16}
+      Rgb32F -> #{const Rgb32F}
+      Rgba8 -> #{const Rgba8}
+      Rgba16 -> #{const Rgba16}
+      Rgba32F -> #{const Rgba32F}
 
 instance Storable ColorType where 
     sizeOf _ = sizeOf (0 :: CUChar)

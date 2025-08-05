@@ -7,8 +7,11 @@ license-file:       LICENSE
 author:             Fay Carsons
 maintainer:         faycarsons23@gmail.com
 category:           Graphics
-build-type:         Simple
+build-type:         Custom
 extra-doc-files:    CHANGELOG.md
+
+custom-setup
+  setup-depends:    base >= 4.7, Cabal >= 2.0, process, directory, filepath
 
 common warnings
     ghc-options: -Wall
