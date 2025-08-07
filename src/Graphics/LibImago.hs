@@ -11,6 +11,7 @@ module Graphics.LibImago (
   ImageInfo (..),
   ColorType (..),
   OptionalFormat (..),
+  COperation (..),
   rawProcessImage,
   rawProcessBuffer,
   rawGetImageInfo,
