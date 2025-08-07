@@ -2,61 +2,64 @@ import Control.Exception
 import Distribution.PackageDescription
 import Distribution.Simple
 import Distribution.Simple.LocalBuildInfo
+import Distribution.Simple.Program.Find (defaultProgramSearchPath, findProgramOnSearchPath)
 import Distribution.Simple.Setup
+import Distribution.Simple.Utils (maybeExit, rawSystemStdInOut)
+import Distribution.Utils.IOData (IODataMode (..))
+import Distribution.Verbosity (Verbosity)
+import qualified Distribution.Verbosity as Verbosity
 import System.Directory
 import System.Exit
 import System.FilePath
 import System.Process
 
-main = defaultMainWithHooks simpleUserHooks{preBuild = rustBuild}
-
-rustBuild :: Args -> BuildFlags -> IO HookedBuildInfo
-rustBuild args flags = do
-  putStrLn "Building Rust library..."
-
-  -- Check if cargo is available
-  cargoAvailable <- checkCargoAvailable
-  if not cargoAvailable
-    then do
-      putStrLn "ERROR: cargo not found. Please install Rust toolchain."
-      exitFailure
-    else return ()
-
-  -- Build the Rust library
-  buildRustLibrary
-
-  putStrLn "Rust library build completed."
-  return emptyHookedBuildInfo
+main :: IO ()
+main = defaultMainWithHooks hooks
  where
-  checkCargoAvailable = do
-    result <- try $ readProcess "cargo" ["--version"] ""
-    case result of
-      Left (_ :: IOException) -> return False
-      Right _ -> return True
+  hooks =
+    simpleUserHooks
+      { preConf = \_ flags -> do
+          rsMake (fromFlag $ configVerbosity flags)
+          pure emptyHookedBuildInfo
+      , confHook = \a flags ->
+          confHook simpleUserHooks a flags >>= rsAddDirs
+      , postClean = \_ flags _ _ ->
+          rsClean (fromFlag $ cleanVerbosity flags)
+      }
 
-buildRustLibrary :: IO ()
-buildRustLibrary = do
-  -- Change to Core directory and build
-  currentDir <- getCurrentDirectory
-  let coreDir = currentDir </> "Core"
+rsFolder :: FilePath
+rsFolder = "Core"
 
-  coreExists <- doesDirectoryExist coreDir
-  if not coreExists
-    then do
-      putStrLn "ERROR: Core directory not found"
-      exitFailure
-    else return ()
+execCargo :: Verbosity -> String -> [String] -> IO ()
+execCargo verbosity command args = do
+  cargoPath <- findProgramOnSearchPath Verbosity.silent defaultProgramSearchPath "cargo"
+  dir <- getCurrentDirectory
+  let cargoExec =
+        case cargoPath of
+          Just (p, _) -> p
+          Nothing -> "cargo"
+      cargoArgs = command : args
+      workingDir = Just (dir </> rsFolder)
+      thirdComponent (_, _, c) = c
+  maybeExit . fmap thirdComponent $ rawSystemStdInOut verbosity cargoExec cargoArgs workingDir Nothing Nothing IODataModeBinary
 
-  setCurrentDirectory coreDir
+rsMake :: Verbosity -> IO ()
+rsMake verbosity = execCargo verbosity "build" ["--release", "--lib"]
 
-  -- Run cargo build --release
-  exitCode <- rawSystem "cargo" ["build", "--release"]
+rsAddDirs :: LocalBuildInfo -> IO LocalBuildInfo
+rsAddDirs lbi' = do
+  dir <- getCurrentDirectory
+  let rustIncludeDir = dir </> rsFolder </> "include"
+      rustLibDir = dir </> rsFolder </> "target/release"
+      updatePkgDescr pkgDescr = pkgDescr{library = updateLib <$> library pkgDescr}
+      updateLib lib = lib{libBuildInfo = updateLibBi (libBuildInfo lib)}
+      updateLibBi libBuild =
+        libBuild
+          { includeDirs = rustIncludeDir : includeDirs libBuild
+          , extraLibDirs = rustLibDir : extraLibDirs libBuild
+          }
+      updateLbi lbi = lbi{localPkgDescr = updatePkgDescr (localPkgDescr lbi)}
+  pure $ updateLbi lbi'
 
-  -- Return to original directory
-  setCurrentDirectory currentDir
-
-  case exitCode of
-    ExitSuccess -> return ()
-    ExitFailure code -> do
-      putStrLn $ "ERROR: Rust build failed with exit code: " ++ show code
-      exitFailure
+rsClean :: Verbosity -> IO ()
+rsClean verbosity = execCargo verbosity "clean" []

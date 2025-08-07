@@ -11,40 +11,38 @@ build-type:         Custom
 extra-doc-files:    CHANGELOG.md
 
 custom-setup
-  setup-depends:    base >= 4.7, Cabal >= 2.0, process, directory, filepath
-
-common warnings
-    ghc-options: -Wall
+  setup-depends:    
+      base >= 4.7
+    , Cabal >= 2.0
+    , process
+    , directory
+    , filepath
 
 library
-    import:           warnings
-    exposed-modules:  
-        Graphics.Imago, Graphics.Imago.Info
-    other-modules:    
-        Graphics.LibImago
-        , Graphics.Interface.Raw
-    build-depends:    
-        base 
-        , bytestring
-        , binary
-        , memory
-        , free
-    hs-source-dirs:   src
-    default-language: Haskell2010
-    include-dirs: cbits
-    ld-options: ./cbits/libimago.a
-    ghc-options: -Wall -O2
+  exposed-modules:  
+      Graphics.Imago, Graphics.Imago.Info
+  other-modules:    
+      Graphics.LibImago
+      , Graphics.Interface.Raw
+  build-depends:    
+      base 
+    , bytestring
+    , binary
+    , memory
+    , free
+  hs-source-dirs:   src
+  default-language: Haskell2010
+  ghc-options: -Wall -O2
+  extra-libraries: imago
 
 test-suite Imago-test
-    import:           warnings
-    default-language: Haskell2010
-    type:             exitcode-stdio-1.0
-    hs-source-dirs:   test
-    main-is:          Main.hs
-    include-dirs: cbits
-    ld-options: ./cbits/libimago.a
-    build-depends:
-        base
-        , imago
-        , bytestring
-        , hspec
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  build-depends:
+      base
+    , imago
+    , bytestring
+    , hspec
+  extra-libraries: imago

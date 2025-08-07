@@ -20,7 +20,6 @@
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Haskell toolchain
             ghc
             cabal-install
             haskell-language-server
