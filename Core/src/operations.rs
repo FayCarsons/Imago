@@ -13,14 +13,14 @@ pub enum FilterType {
     Lanczos3,
 }
 
-impl Into<ImageFilter> for FilterType {
-    fn into(self) -> ImageFilter {
-        match self {
-            Self::Nearest => ImageFilter::Nearest,
-            Self::Triangle => ImageFilter::Triangle,
-            Self::CatmullRom => ImageFilter::CatmullRom,
-            Self::Gaussian => ImageFilter::Gaussian,
-            Self::Lanczos3 => ImageFilter::Lanczos3,
+impl From<FilterType> for ImageFilter {
+    fn from(value: FilterType) -> ImageFilter {
+        match value {
+            FilterType::Nearest => ImageFilter::Nearest,
+            FilterType::Triangle => ImageFilter::Triangle,
+            FilterType::CatmullRom => ImageFilter::CatmullRom,
+            FilterType::Gaussian => ImageFilter::Gaussian,
+            FilterType::Lanczos3 => ImageFilter::Lanczos3,
         }
     }
 }

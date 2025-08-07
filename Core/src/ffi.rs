@@ -1,15 +1,18 @@
 use crate::error::{Context, ImagoStatus};
-use crate::formats::{Format, decode_image, encode_image};
+use crate::formats::{Format, decode_image, encode_image, safe_decode_buffer, safe_encode_buffer};
 use crate::info::{ImageInfo, get_buffer_info_inner, get_image_info_inner};
 use crate::operations::{Interpreter, Operation, apply_operation};
 use crate::request::{ByteArray, Request};
-use image;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::slice;
 
+/// # Safety
 #[unsafe(no_mangle)]
-pub extern "C" fn get_image_info(ctx: *mut Context, input_path: *const c_char) -> *mut ImageInfo {
+pub unsafe extern "C" fn get_image_info(
+    ctx: *mut Context,
+    input_path: *const c_char,
+) -> *mut ImageInfo {
     if ctx.is_null() {
         unsafe {
             *ctx = Context::failure(ImagoStatus::NullContext, "Context is null");
@@ -28,7 +31,9 @@ pub extern "C" fn get_image_info(ctx: *mut Context, input_path: *const c_char) -
         match CStr::from_ptr(input_path).to_str() {
             Ok(path) => path,
             Err(e) => {
-                dbg!(e);
+                #[cfg(debug_assertions)]
+                println!("{e:#?}");
+
                 let err = format!("Internal error: {e}");
                 *ctx = Context::failure(ImagoStatus::InvalidPath, err);
                 return std::ptr::null_mut();
@@ -49,8 +54,9 @@ pub extern "C" fn get_image_info(ctx: *mut Context, input_path: *const c_char) -
     }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
-pub extern "C" fn get_buffer_info(
+pub unsafe extern "C" fn get_buffer_info(
     ctx: *mut Context,
     buffer_data: *const u8,
     buffer_len: usize,
@@ -84,8 +90,9 @@ pub extern "C" fn get_buffer_info(
     }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
-pub extern "C" fn destroy_image_info(image_info: *mut ImageInfo) {
+pub unsafe extern "C" fn destroy_image_info(image_info: *mut ImageInfo) {
     if !image_info.is_null() {
         unsafe {
             let _ = Box::from_raw(image_info);
@@ -93,12 +100,14 @@ pub extern "C" fn destroy_image_info(image_info: *mut ImageInfo) {
     }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn make_context() -> *mut Context {
     let context = Box::new(Context::success());
     Box::into_raw(context)
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_context(ctx: *mut Context) {
     if !ctx.is_null() {
@@ -108,17 +117,19 @@ pub unsafe extern "C" fn destroy_context(ctx: *mut Context) {
     }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
-pub extern "C" fn get_status(ctx: *mut Context) -> ImagoStatus {
+pub unsafe extern "C" fn get_status(ctx: *mut Context) -> ImagoStatus {
     unsafe { ctx.read().0.status }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_error_message(ctx: *mut Context) -> *mut c_char {
     if ctx.is_null() {
         return std::ptr::null_mut();
     }
-    
+
     let context = unsafe { &*ctx };
     match context.0.status {
         ImagoStatus::OK => std::ptr::null_mut(),
@@ -130,15 +141,17 @@ pub unsafe extern "C" fn get_error_message(ctx: *mut Context) -> *mut c_char {
     }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_error_message(msg: *mut c_char) {
     if !msg.is_null() {
-        unsafe { 
-            let _ = CString::from_raw(msg); 
+        unsafe {
+            let _ = CString::from_raw(msg);
         }
     }
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_image(
     ctx: *mut Context,
@@ -157,6 +170,9 @@ pub unsafe extern "C" fn process_image(
     let img = match image::open(request.args.0) {
         Ok(img) => img,
         Err(e) => unsafe {
+            #[cfg(debug_assertions)]
+            println!("{e:#?}");
+
             *ctx = Context::failure(ImagoStatus::LoadFailed, e);
             return ByteArray::failure_string();
         },
@@ -179,6 +195,7 @@ pub unsafe extern "C" fn process_image(
     Box::into_raw(bytes)
 }
 
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_buffer(
     ctx: *mut Context,
@@ -195,7 +212,7 @@ pub unsafe extern "C" fn process_buffer(
         }
     }
 
-    let input_format = (!input_format.is_null()).then(|| input_format);
+    let input_format = (!input_format.is_null()).then_some(unsafe { input_format.read() });
 
     let request = match Request::build_buffer(
         content,
@@ -244,6 +261,98 @@ pub unsafe extern "C" fn process_buffer(
     Box::into_raw(buf)
 }
 
+/// Takes a buffer of pixel data and returns it encoded as the given format
+///
+/// # Safety
+/// Aside from intermediate data structures, memory is handled by Haskell
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn encode_buffer(
+    ctx: *mut Context,
+    buffer_data: *const u8,
+    buffer_len: usize,
+    format: *const Format,
+) -> *mut ByteArray {
+    if ctx.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::NullContext, "Internal error, context null");
+            return ByteArray::failure_string();
+        }
+    }
+
+    if buffer_data.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::InvalidInputBuffer, "Input buffer is null");
+            return ByteArray::failure_string();
+        }
+    }
+
+    if format.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::EncodeFailed, "Format pointer is null");
+            return ByteArray::failure_string();
+        }
+    }
+
+    let buffer = unsafe { slice::from_raw_parts(buffer_data, buffer_len) };
+    let format = unsafe { format.read() };
+
+    match safe_encode_buffer(buffer, format) {
+        Ok(encoded) => {
+            let buffer = Box::new(ByteArray::from(encoded));
+            Box::into_raw(buffer)
+        }
+        Err(e) => unsafe {
+            *ctx = Context::from_error(e);
+            ByteArray::failure_string()
+        },
+    }
+}
+
+/// Takes an encoded image and returns the pixel data
+///
+/// # Safety
+/// Aside from intermediate data structures, all memory is handled by Haskell
+pub unsafe extern "C" fn decode_buffer(
+    ctx: *mut Context,
+    buffer_data: *const u8,
+    buffer_len: usize,
+    optional_format: *const Format,
+) -> *mut ByteArray {
+    if ctx.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::NullContext, "Internal error, context null");
+            return ByteArray::failure_string();
+        }
+    }
+
+    if buffer_data.is_null() {
+        unsafe {
+            *ctx = Context::failure(ImagoStatus::InvalidInputBuffer, "Input buffer is null");
+            return ByteArray::failure_string();
+        }
+    }
+
+    let buffer = unsafe { slice::from_raw_parts(buffer_data, buffer_len) };
+
+    let format = if optional_format.is_null() {
+        None
+    } else {
+        Some(unsafe { optional_format.read() })
+    };
+
+    match safe_decode_buffer(buffer, format) {
+        Ok(decoded) => {
+            let buffer = Box::new(ByteArray::from(decoded));
+            Box::into_raw(buffer)
+        }
+        Err(e) => unsafe {
+            *ctx = Context::from_error(e);
+            ByteArray::failure_string()
+        },
+    }
+}
+
+/// # Safety
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn destroy_output_buffer(bytes: *mut ByteArray) {
     if !bytes.is_null() {
@@ -253,6 +362,8 @@ pub unsafe extern "C" fn destroy_output_buffer(bytes: *mut ByteArray) {
     }
 }
 
+/// # Safety
+/// debugging only
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn print_operations(
     operations_data: *const Operation,

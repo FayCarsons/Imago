@@ -144,17 +144,19 @@ impl From<image::ColorType> for ColorType {
     }
 }
 
+/// Raw encoded buffer -> Pixel data
 pub fn decode_image(bytes: &[u8], format: Option<Format>) -> Result<DynamicImage, ImagoError> {
     if let Some(fmt) = format {
         let fmt: ImageFormat = fmt.into();
 
         image::load_from_memory_with_format(bytes, fmt)
-            .or_else(|e| Err(ImagoError::new(ImagoStatus::LoadFailed, e)))
+            .map_err(|e| ImagoError::new(ImagoStatus::LoadFailed, e))
     } else {
-        image::load_from_memory(bytes).or_else(|e| Err(ImagoError::new(ImagoStatus::LoadFailed, e)))
+        image::load_from_memory(bytes).map_err(|e| ImagoError::new(ImagoStatus::LoadFailed, e))
     }
 }
 
+/// Pixel data -> Encoded -> Raw buffer
 pub fn encode_image(
     Interpreter {
         img,
@@ -196,5 +198,32 @@ pub fn encode_image(
             Ok(output)
         }
         None => Ok(img.into_bytes()),
+    }
+}
+
+/// Raw pixel data -> encoded image bytes
+pub fn safe_encode_buffer(buffer: &[u8], format: Format) -> Result<Vec<u8>, ImagoError> {
+    let img =
+        image::load_from_memory(buffer).map_err(|e| ImagoError::new(ImagoStatus::LoadFailed, e))?;
+
+    encode_image(Interpreter {
+        img,
+        output_format: Some(format),
+        quality: None,
+    })
+}
+
+/// Encoded image bytes -> raw pixel data
+pub fn safe_decode_buffer(buffer: &[u8], format: Option<Format>) -> Result<Vec<u8>, ImagoError> {
+    if let Some(fmt) = format {
+        match image::load_from_memory_with_format(buffer, fmt.into()) {
+            Ok(img) => Ok(img.as_bytes().to_vec()),
+            Err(e) => Err(ImagoError::new(ImagoStatus::LoadFailed, e)),
+        }
+    } else {
+        match image::load_from_memory(buffer) {
+            Ok(img) => Ok(img.as_bytes().to_vec()),
+            Err(e) => Err(ImagoError::new(ImagoStatus::LoadFailed, e)),
+        }
     }
 }

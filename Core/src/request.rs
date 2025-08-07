@@ -13,17 +13,17 @@ pub struct ByteArray {
 }
 
 impl ByteArray {
-    pub const NULL: Self = ByteArray {
-        len: 0,
-        data: std::ptr::null(),
-    };
-
+    /// # Safety
     pub unsafe fn new(data: *const u8, len: usize) -> Self {
         Self { data, len }
     }
 
+    // NOTE:(@faycarsons)
+    // Write "FAILURE" to the ByteArray, with the hope that if everything else fails
+    // users will at least get a message like "Error: 'FAILURE' is not a valid image" to
+    // unambiguously let them know something has gone wrong
     pub fn failure_string() -> *mut Self {
-        let s = "Failure";
+        let s = "FAILURE";
 
         let this = Box::new(ByteArray {
             len: s.len(),
@@ -37,7 +37,9 @@ impl ByteArray {
         if self.data.is_null() || self.len == 0 {
             return String::new();
         }
+
         let slice = unsafe { slice::from_raw_parts(self.data, self.len) };
+
         String::from_utf8_lossy(slice).to_string()
     }
 }
@@ -46,6 +48,16 @@ impl From<Vec<u8>> for ByteArray {
     fn from(value: Vec<u8>) -> Self {
         let (data, len, _) = value.into_raw_parts();
         ByteArray { data, len }
+    }
+}
+
+// TODO: (@faycarsons)
+// Off the top of my head, I can't think of a better way to do this besides
+// effectively cloning and then leaking
+// But may be worth looking into to reduce allocations?
+impl From<&[u8]> for ByteArray {
+    fn from(value: &[u8]) -> Self {
+        Self::from(value.to_vec())
     }
 }
 
@@ -60,7 +72,7 @@ impl<'a> FileArgs<'a> {
         (!input_path.is_null())
             .then(|| unsafe { CStr::from_ptr(input_path) })
             .and_then(|s| s.to_str().ok())
-            .map(|input_path| Self(input_path))
+            .map(Self)
     }
 }
 
@@ -75,7 +87,7 @@ impl<'a> BufferArgs<'a> {
     pub fn decode(
         buffer_data: *const u8,
         buffer_len: usize,
-        input_format: Option<*const Format>,
+        input_format: Option<Format>,
     ) -> Result<Self, ImagoError> {
         let input_buffer = (!buffer_data.is_null())
             .then(|| unsafe { slice::from_raw_parts(buffer_data, buffer_len) })
@@ -87,16 +99,7 @@ impl<'a> BufferArgs<'a> {
             })?;
 
         let input_format = match input_format {
-            Some(fmt) => {
-                if fmt.is_null() {
-                    Err(ImagoError::new(
-                        ImagoStatus::InvalidInputFormat,
-                        "Internal error, nulll or otherwise invalid input format",
-                    ))
-                } else {
-                    unsafe { Ok(Some(fmt.read())) }
-                }
-            }
+            Some(fmt) => Ok(Some(fmt)),
             None => Ok(None),
         }?;
 
@@ -113,10 +116,6 @@ pub fn decode_pipeline<'a>(
 ) -> Option<&'a [Operation]> {
     (!operations_data.is_null())
         .then(|| unsafe { slice::from_raw_parts(operations_data, operations_len) })
-}
-
-pub fn decode_output_format(fmt: *const Format) -> Option<Format> {
-    (!fmt.is_null()).then(|| unsafe { fmt.read() })
 }
 
 #[repr(C)]
@@ -148,7 +147,7 @@ impl<'a> Request<'a, BufferArgs<'a>> {
     pub fn build_buffer(
         buffer_data: *const u8,
         buffer_len: usize,
-        input_format: Option<*const Format>,
+        input_format: Option<Format>,
         operations_data: *const Operation,
         operations_len: usize,
     ) -> Result<Self, ImagoError> {

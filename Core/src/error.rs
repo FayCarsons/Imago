@@ -21,11 +21,6 @@ pub struct ImagoError {
 }
 
 impl ImagoError {
-    pub const NULL: Self = Self {
-        status: ImagoStatus::OK,
-        error: ByteArray::NULL,
-    };
-
     pub fn new<S>(status: ImagoStatus, message: S) -> Self
     where
         S: ToString,
@@ -42,7 +37,13 @@ pub struct Context(pub ImagoError);
 
 impl Context {
     pub fn success() -> Self {
-        Self(ImagoError::NULL)
+        Self(ImagoError {
+            status: ImagoStatus::OK,
+            error: ByteArray {
+                data: std::ptr::null_mut(),
+                len: 0,
+            },
+        })
     }
 
     pub fn failure<S>(status: ImagoStatus, message: S) -> Self
