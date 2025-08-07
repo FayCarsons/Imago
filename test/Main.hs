@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Main (main) where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
@@ -16,11 +18,32 @@ program = do
   Imago.resize 800 800 Lanczos3 False
   Imago.convert Imago.Png
 
+testImage :: FilePath
+testImage = "THUMBNAIL_TEST.png"
+
 main :: IO ()
 main = hspec $ do
+  describe "Smoke tests" $ do
+    it "Reads a file" $ do
+      Imago.runFileTransform testImage (pure ()) >>= \case
+        Right _ -> pure ()
+        Left err -> expectationFailure $ show err
+
+    it "Reads a buffer with explicit format" $ do
+      bytes <- BS.readFile testImage
+      Imago.runBufferTransform bytes (Just Imago.Png) (pure ()) >>= \case
+        Right _ -> pure ()
+        Left err -> expectationFailure $ show err
+
+    it "Reads a buffer with inferred format" $ do
+      bytes <- BS.readFile testImage
+      Imago.runBufferTransform bytes Nothing (pure ()) >>= \case
+        Right _ -> pure ()
+        Left err -> expectationFailure $ show err
+
   describe "Simple Transformations" $ do
     it "Resizes an image (from path) and converts to WebP" $ do
-      result <- Imago.runFileTransform "THUMBNAIL_TEST.png" program
+      result <- Imago.runFileTransform testImage program
       orFail result
 
     it "Resizes an image (from buffer) and converts to WebP" $ do
