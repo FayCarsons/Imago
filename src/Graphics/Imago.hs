@@ -24,6 +24,9 @@ module Graphics.Imago (
   convert,
   runFileTransform,
   runBufferTransform,
+  decodePixelData,
+  decodePixelDataWithFormat,
+  encodePixelData,
 ) where
 
 import Control.Monad.Free (Free (..), MonadFree, liftF)
@@ -77,3 +80,12 @@ runFileTransform path transform =
 runBufferTransform :: ByteString -> Maybe Format -> TransformM () -> IO (Either ByteString ByteString)
 runBufferTransform contents inputFormat transform =
   rawProcessBuffer contents inputFormat (unfold transform)
+
+decodePixelData :: ByteString -> IO (Either ByteString ByteString)
+decodePixelData buffer = rawDecodeBuffer buffer Nothing
+
+decodePixelDataWithFormat :: ByteString -> Format -> IO (Either ByteString ByteString)
+decodePixelDataWithFormat buffer format = rawDecodeBuffer buffer (Just format)
+
+encodePixelData :: ByteString -> Format -> IO (Either ByteString ByteString)
+encodePixelData = rawEncodeBuffer

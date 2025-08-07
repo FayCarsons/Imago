@@ -15,6 +15,8 @@ module Graphics.LibImago (
   rawProcessBuffer,
   rawGetImageInfo,
   rawGetBufferInfo,
+  rawEncodeBuffer,
+  rawDecodeBuffer,
   getErrorMessage,
   printOperations,
 ) where
@@ -62,6 +64,12 @@ foreign import ccall "&destroy_error_message"
 foreign import ccall "&destroy_context"
   c_destroy_context_ptr :: FunPtr (Ptr Context -> IO ())
 
+foreign import ccall "encode_buffer"
+  c_encode_buffer :: Ptr Context -> Ptr CUChar -> CSize -> Ptr Format -> IO (Ptr RawSlice)
+
+foreign import ccall "decode_buffer"
+  c_decode_buffer :: Ptr Context -> Ptr CUChar -> CSize -> Ptr Format -> IO (Ptr RawSlice)
+
 foreign import ccall "&destroy_output_buffer"
   c_destroy_output_buffer_ptr :: FunPtr (Ptr RawSlice -> IO ())
 
@@ -77,92 +85,83 @@ foreign import ccall "get_buffer_info"
 foreign import ccall "&destroy_image_info"
   c_destroy_image_info_finalizer :: FunPtr (Ptr ImageInfo -> IO ())
 
+-- Helpers
+
+-- | Call a function with a managed pointer to the context
+withContext :: (Ptr Context -> IO (Ptr a)) -> IO (Either ByteString (Ptr a))
+withContext act = do
+  context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
+
+  result <- withForeignPtr context act
+  status <- fromC <$> withForeignPtr context c_get_status
+
+  case (status, result == nullPtr) of
+    (Ok, False) -> pure $ Right result
+    _error -> Left <$> withForeignPtr context getErrorMessage
+
+-- | Translate a `Maybe Format` into a pointer that may be null
+withOptionalFormat :: Maybe Format -> (Ptr Format -> IO a) -> IO a
+withOptionalFormat Nothing action = action nullPtr
+withOptionalFormat (Just fmt) action = with fmt action
+
+-- | Low level wrappers
 rawProcessImage :: FilePath -> [COperation] -> IO (Either ByteString ByteString)
 rawProcessImage inputPath operations = do
-  context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
+  result <-
+    withContext $ \ctx ->
+      withCString inputPath $ \pathCStr ->
+        withArrayLen operations $ \operationsLen operationsPtr ->
+          c_process_image_raw ctx pathCStr operationsPtr (fromIntegral operationsLen)
 
-  result <- withCString inputPath $ \pathCStr ->
-    withArray operations $ \opsArray ->
-      withForeignPtr context $ \ctx ->
-        c_process_image_raw
-          ctx
-          pathCStr
-          opsArray
-          (fromIntegral $ length operations)
-
-  status <- fromC <$> withForeignPtr context c_get_status
-  case (status, result == nullPtr) of
-    (Ok, False) -> foreignSlice result >>= sliceToByteString <&> Right
-    _ -> Left <$> withForeignPtr context getErrorMessage
+  traverse (foreignSlice >=> sliceToByteString) result
 
 rawProcessBuffer :: ByteString -> Maybe Format -> [COperation] -> IO (Either ByteString ByteString)
-rawProcessBuffer contents mFormat operations = do
-  -- Create context with ForeignPtr
-  context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
+rawProcessBuffer buffer optionalFormat operations = do
+  result <- withContext $ \ctx ->
+    BSU.unsafeUseAsCStringLen buffer $ \(bufPtr, bufLen) ->
+      withArrayLen operations $ \operationsLen operationsPtr ->
+        withOptionalFormat optionalFormat $ \fmt ->
+          c_process_buffer_raw ctx bufPtr (fromIntegral bufLen) fmt operationsPtr (fromIntegral operationsLen)
 
-  result <-
-    BSU.unsafeUseAsCStringLen contents $ \(contentPtr, contentLen) ->
-      withArray operations $ \operationsPtr ->
-        withForeignPtr context $ \ctx ->
-          case mFormat of
-            Just format ->
-              with format $ \inputFormat ->
-                c_process_buffer_raw
-                  ctx
-                  contentPtr
-                  (fromIntegral contentLen)
-                  inputFormat
-                  operationsPtr
-                  (fromIntegral $ length operations)
-            Nothing ->
-              c_process_buffer_raw
-                ctx
-                contentPtr
-                (fromIntegral contentLen)
-                nullPtr
-                operationsPtr
-                (fromIntegral $ length operations)
-
-  status <- fromC <$> withForeignPtr context c_get_status
-  case (status, result == nullPtr) of
-    (Ok, False) -> foreignSlice result >>= sliceToByteString <&> Right
-    _ -> Left <$> withForeignPtr context getErrorMessage
+  traverse (foreignSlice >=> sliceToByteString) result
 
 rawGetImageInfo :: FilePath -> IO (Either ByteString ImageInfo)
 rawGetImageInfo path = do
-  context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
-
   result <-
-    withCString path $ \pathPtr ->
-      withForeignPtr context $ \ctx ->
+    withContext $ \ctx ->
+      withCString path $ \pathPtr ->
         c_get_image_info ctx pathPtr
 
-  status <- fromC <$> withForeignPtr context c_get_status
-  case (status, result == nullPtr) of
-    (Ok, False) -> do
-      -- Create ForeignPtr with finalizer for automatic cleanup
-      infoPtr <- newForeignPtr c_destroy_image_info_finalizer result
-      info <- withForeignPtr infoPtr peek
-      return $ Right info
-    _ -> Left <$> withForeignPtr context getErrorMessage
+  traverse (newForeignPtr c_destroy_image_info_finalizer >=> flip withForeignPtr peek) result
 
 rawGetBufferInfo :: ByteString -> IO (Either ByteString ImageInfo)
 rawGetBufferInfo buffer = do
-  context <- c_make_context >>= newForeignPtr c_destroy_context_ptr
-
   result <-
-    BSU.unsafeUseAsCStringLen buffer $ \(bufferPtr, bufferLen) ->
-      withForeignPtr context $ \ctx ->
-        c_get_buffer_info ctx (castPtr bufferPtr) (fromIntegral bufferLen)
+    withContext $ \ctx ->
+      BSU.unsafeUseAsCStringLen buffer $ \(bufPtr, bufLen) ->
+        c_get_buffer_info ctx (castPtr bufPtr) (fromIntegral bufLen)
 
-  status <- fromC <$> withForeignPtr context c_get_status
-  case (status, result == nullPtr) of
-    (Ok, False) -> do
-      -- Create ForeignPtr with finalizer for automatic cleanup
-      infoPtr <- newForeignPtr c_destroy_image_info_finalizer result
-      info <- withForeignPtr infoPtr peek
-      return $ Right info
-    _ -> Left <$> withForeignPtr context getErrorMessage
+  traverse (newForeignPtr c_destroy_image_info_finalizer >=> flip withForeignPtr peek) result
+
+rawEncodeBuffer :: ByteString -> Format -> IO (Either ByteString ByteString)
+rawEncodeBuffer buffer encoding = do
+  result <-
+    withContext $ \ctx ->
+      BSU.unsafeUseAsCStringLen buffer $ \(bufPtr, bufLen) ->
+        with encoding $ \rawEncoding ->
+          c_encode_buffer ctx (castPtr bufPtr) (fromIntegral bufLen) rawEncoding
+
+  traverse (newForeignPtr c_destroy_output_buffer_ptr >=> sliceToByteString) result
+
+rawDecodeBuffer :: ByteString -> Maybe Format -> IO (Either ByteString ByteString)
+rawDecodeBuffer buffer optionalFormat = do
+  result <-
+    withContext $ \ctx ->
+      BSU.unsafeUseAsCStringLen buffer $ \(bufPtr, bufLen) ->
+        withOptionalFormat optionalFormat $ \fmt ->
+          c_decode_buffer ctx (castPtr bufPtr) (fromIntegral bufLen) fmt
+
+  traverse (newForeignPtr c_destroy_output_buffer_ptr >=> sliceToByteString) result
 
 getErrorMessage :: Ptr Context -> IO ByteString
 getErrorMessage ctx = do
