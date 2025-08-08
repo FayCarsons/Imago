@@ -8,11 +8,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Graphics.Imago (
-  TransformM,
+  -- Parameters
   Degree (..),
   Direction (..),
   Filter (..),
   Format (..),
+  -- Image processing program
+  Program,
   resize,
   rotate,
   flip,
@@ -22,6 +24,7 @@ module Graphics.Imago (
   contrast,
   quality,
   convert,
+  -- Run a program on a buffer or file
   runFileTransform,
   runBufferTransform,
   decodePixelData,
@@ -59,6 +62,24 @@ makeFree ''Transform
 
 type TransformM = Free Transform
 
+{- | An image transformation
+This is a free monad, so we can express image transformations as monadic `do` statements,
+use `bind`/`>>=`, conditionally apply operations.
+
+Example:
+```
+myImageTransform = do
+  resize 400 400 Nearest False
+  quality 90
+  convert Avif
+
+anotherTransform = convert Jpeg
+
+imageIdentity = pure ()
+```
+-}
+type Program = TransformM ()
+
 unfold :: TransformM a -> [COperation]
 unfold (Pure _) = []
 unfold (Free op) =
@@ -73,19 +94,24 @@ unfold (Free op) =
     Quality qual next -> CQuality (fromIntegral qual) : unfold next
     Convert format next -> CConvert format : unfold next
 
-runFileTransform :: FilePath -> TransformM () -> IO (Either ByteString ByteString)
+-- | Run a transformation on a file
+runFileTransform :: FilePath -> Program -> IO (Either ByteString ByteString)
 runFileTransform path transform =
   rawProcessImage path (unfold transform)
 
-runBufferTransform :: ByteString -> Maybe Format -> TransformM () -> IO (Either ByteString ByteString)
+-- | Run a transformation on a buffer
+runBufferTransform :: ByteString -> Maybe Format -> Program -> IO (Either ByteString ByteString)
 runBufferTransform contents inputFormat transform =
   rawProcessBuffer contents inputFormat (unfold transform)
 
+-- | Decode a buffer into its pixel data (layout is determined by its `ColorType`, which can be accessed via `getFileInfo` or `getBufferInfo`)
 decodePixelData :: ByteString -> IO (Either ByteString ByteString)
 decodePixelData buffer = rawDecodeBuffer buffer Nothing
 
+-- | Decode a buffer into its pixel data, with a format hint
 decodePixelDataWithFormat :: ByteString -> Format -> IO (Either ByteString ByteString)
 decodePixelDataWithFormat buffer format = rawDecodeBuffer buffer (Just format)
 
+-- | Encode raw pixel data into a given format
 encodePixelData :: ByteString -> Format -> IO (Either ByteString ByteString)
 encodePixelData = rawEncodeBuffer

@@ -4,23 +4,29 @@
 
 Imago is a light wrapper around Rust's `image` crate, providing a simple monadic interface to its well-optimized, well-maintained image processing algorithms. 
 
-Building [Texel](https://faycarsons.xyz) I found myself needing an image processing library capable of basic optimization, not wanting to shell out money to cloud services like Akamai or add a Rust microservice and all the complexity and overhead that comes with that, I decided to build my own. 
+Building [Texel](https://faycarsons.xyz), I found myself needing an optimized image processing library capable of basic optimization, not wanting to shell out money to cloud services like Akamai or add a Rust microservice and all the complexity that comes with that, I decided to build my own. 
 
-## How do I use it
+## How to use it
 
-Image transformations can be defined in `do` blocks: 
+Image transformations are expressed as a free monad, `Program`:
 
 ```haskell
-import qualified Graphics.Imago as Imago
-import Graphics.Imago (runFileTransform, resize, grayscale, Filter(..), Format(..))
+import Graphics.Imago
 
-resizePlusGrayscale :: Int -> Int -> TransformM ()
-resizePlusGrayscale width height = do 
-    resize width height Linear False
+myImageTransform :: (Int, Int) -> Program
+myImageTransform (width, height) = do 
+    resize width height Nearest False
+    quality 80
     grayscale
+    convert WebP
 
 resizeImage :: FilePath -> IO ByteString
-resizeImage path = runFileTransform path Png resizePlusGrayscale
+resizeImage path = do 
+  info <- getFileInfo path
+  let ratio = round . (* 0.8) . fromIntegral
+      targetDimensions = both ratio ratio $ dimensions info
+      imageProcessingProgram = myImageTransform targetDimensions
+  runFileTransform path Png imageProcessingProgram
 ```
 
 Current features include:
