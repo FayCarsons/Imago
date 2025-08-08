@@ -28,12 +28,14 @@ You can them run them on files or flat buffers:
 resizeImage :: FilePath -> IO ByteString
 resizeImage path = do 
   info <- getFileInfo path
-  let (width, height) = dimensions info
-      targetDimensions = (ratio width, ratio height)
-      imageProcessingProgram =
-        resizeAndConvert targetDimensions >>= reduceQuality
-  runFileTransform path Png imageProcessingProgram
-  where ratio = round . (* 0.8) . fromIntegral
+  runFileTransform path (mkTransform info)
+  where 
+    ratio = round . (* 0.8) . fromIntegral
+    mkTransform info = do
+      let (width, height) = dimensions info
+          targetDimensions = (ratio width, ratio height)
+      resizeAndConvert targetDimensions >>= reduceQuality
+      
 ```
 
 Current features include:

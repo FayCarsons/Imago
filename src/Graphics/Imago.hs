@@ -27,6 +27,7 @@ module Graphics.Imago (
   -- Run a program on a buffer or file
   runFileTransform,
   runBufferTransform,
+  runBufferTransformWithFormat,
   decodePixelData,
   decodePixelDataWithFormat,
   encodePixelData,
@@ -100,9 +101,13 @@ runFileTransform path transform =
   rawProcessImage path (unfold transform)
 
 -- | Run a transformation on a buffer
-runBufferTransform :: ByteString -> Maybe Format -> Program -> IO (Either ByteString ByteString)
-runBufferTransform contents inputFormat transform =
-  rawProcessBuffer contents inputFormat (unfold transform)
+runBufferTransform :: ByteString -> Program -> IO (Either ByteString ByteString)
+runBufferTransform buffer transform =
+  rawProcessBuffer buffer Nothing (unfold transform)
+
+runBufferTransformWithFormat :: ByteString -> Format -> Program -> IO (Either ByteString ByteString)
+runBufferTransformWithFormat buffer inputFormat transform =
+  rawProcessBuffer buffer (Just inputFormat) (unfold transform)
 
 -- | Decode a buffer into its pixel data (layout is determined by its `ColorType`, which can be accessed via `getFileInfo` or `getBufferInfo`)
 decodePixelData :: ByteString -> IO (Either ByteString ByteString)
